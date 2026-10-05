@@ -1,0 +1,42 @@
+services:
+  # 1. Container API Gateway (Nginx)
+  api-gateway:
+    build: ./api-gateway
+    container_name: api_gateway
+    ports:
+      - "8080:80"  # Cổng 8080 ra ngoài máy thật, trỏ vào cổng 80 trong container
+    depends_on:
+      - payment-service
+      - otp-service
+      # - user-service    # Mở comment khi Đạt push code
+      # - tuition-service # Mở comment khi Quy push code
+      # - frontend        # Mở comment khi Long push code
+
+  # 2. Payment Service (Bạn Hoan đã làm xong)
+  payment-service:
+    build: ./services/payment-service
+    container_name: payment_service
+    ports:
+      - "8001:8000"
+
+  # 3. OTP Service (Bạn Phúc đã làm xong)
+  otp-service:
+    build: ./services/otp-service
+    container_name: otp_service
+    ports:
+      - "8002:8000"
+
+  # 4. User Service (Đạt) - un-comment khi có đủ Dockerfile ở repo
+  # user-service:
+  #   build: ./services/user-service
+  #   container_name: user_service
+
+  # 5. Tuition Service (Quy) - un-comment khi có đủ Dockerfile ở repo
+  # tuition-service:
+  #   build: ./services/tution-service
+  #   container_name: tuition_service
+
+  # 6. Frontend PHP (Longgehihi) - un-comment khi Long push xong giao diện
+  # frontend:
+  #   build: ./frontend
+  #   container_name: ibanking_frontend
