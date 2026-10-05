@@ -42,10 +42,19 @@
   --shadow-inset-light: inset 0 1px 1px rgba(255, 255, 255, 0.9);
 }
 
-* {
+*, *::before, *::after {
   box-sizing: border-box;
   margin: 0;
   padding: 0;
+}
+
+html, body {
+  width: 100%;
+  max-width: 100vw;
+  overflow-x: hidden;
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
 }
 
 body {
@@ -517,9 +526,7 @@ body {
 }
 
 .apple-main-stage.stage-hidden {
-  opacity: 0.06;
-  transform: translateY(25px) scale(0.97);
-  pointer-events: none;
+  display: none !important;
 }
 
 /* Clean, Crisp Fintech Cards matching the Luminous Stage */
@@ -4156,4 +4163,267 @@ body {
   .receipt-paper { position: absolute; left: 0; top: 0; width: 100%; margin: 0; }
   .no-print { display: none !important; }
 }
+
+/* ==========================================================================
+   TỐI ƯU HÓA RESPONSIVE TOÀN DIỆN CHO MÀN HÌNH NHỎ & ZOOM (100% - 150%)
+   Thanh Trên Cùng (Navbar), Thanh Dưới Cùng (Footer) & Nội Dung
+   Không bao giờ bị tràn chiều ngang (overflow-x: hidden), tự co giãn mượt mà
+   ========================================================================== */
+
+/* 1. BREAKPOINT: Màn hình Laptop 13-14 inch & Trình duyệt Zoom 110% - 125% (<= 1280px) */
+@media screen and (max-width: 1280px) {
+  .navbar-wrapper {
+    max-width: 100%;
+    padding: 0.6rem 1rem;
+    gap: 0.65rem;
+  }
+  .navbar-brand-subtitle {
+    display: none;
+  }
+  .navbar-brand-title {
+    font-size: 1.12rem;
+  }
+  .navbar-brand-logo {
+    height: 38px;
+  }
+  .navbar-nav {
+    gap: 0.25rem;
+    padding: 0.25rem 0.35rem;
+  }
+  .nav-item {
+    padding: 0.42rem 0.8rem;
+    font-size: 0.8rem;
+    gap: 0.35rem;
+  }
+  .navbar-actions {
+    gap: 0.45rem;
+  }
+  .user-balance-pill {
+    padding: 0.35rem 0.75rem;
+  }
+  .balance-label {
+    display: none;
+  }
+  .balance-value {
+    font-size: 0.92rem;
+  }
+  .user-name {
+    max-width: 105px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 0.78rem;
+  }
+  .user-role-badge {
+    font-size: 0.6rem;
+  }
+  .mode-toggle-btn {
+    padding: 0.38rem 0.65rem;
+    font-size: 0.7rem;
+  }
+  .payment-grid {
+    grid-template-columns: minmax(340px, 420px) 1fr;
+    gap: 1.5rem;
+  }
+  .tuition-hero-inner {
+    gap: 1.5rem;
+  }
+  .tuition-account-card-widget {
+    min-width: 290px;
+  }
+  .navbar-contact-pills .contact-item:nth-child(3),
+  .navbar-contact-pills .contact-divider {
+    display: none;
+  }
+}
+
+/* 2. BREAKPOINT: Màn hình Tablet & Cửa sổ thu nhỏ (<= 1040px) */
+@media screen and (max-width: 1040px) {
+  .navbar-wrapper {
+    flex-wrap: wrap;
+    gap: 0.5rem 0.75rem;
+    padding: 0.5rem 0.75rem;
+  }
+  .navbar-nav {
+    order: 3;
+    width: 100%;
+    justify-content: center;
+    border-radius: 12px;
+    padding: 0.3rem 0.5rem;
+  }
+  .nav-item {
+    flex: 1;
+    justify-content: center;
+    padding: 0.4rem 0.6rem;
+  }
+  .navbar-actions {
+    order: 2;
+  }
+  .apple-main-stage {
+    grid-template-columns: 1fr;
+    max-width: 580px;
+    margin: 1.5rem auto 3rem;
+    padding: 0 1rem;
+    gap: 1.75rem;
+  }
+  .tuition-hero-banner {
+    padding: 1.75rem 1.25rem;
+  }
+  .tuition-hero-inner {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 1.25rem;
+  }
+  .tuition-account-card-widget {
+    min-width: 0;
+    width: 100%;
+    max-width: 100%;
+  }
+  .payment-grid {
+    grid-template-columns: 1fr;
+    gap: 1.5rem;
+  }
+  .navbar-contact-pills {
+    display: none;
+  }
+  .navbar-security-badge {
+    display: none;
+  }
+  .navbar-brand-text p {
+    display: none;
+  }
+  .history-hero-inner {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 1.25rem;
+  }
+}
+
+/* 3. BREAKPOINT: Màn hình Di động & Smartphone (<= 768px) */
+@media screen and (max-width: 768px) {
+  .navbar-container {
+    padding: 0;
+  }
+  .navbar-brand-title {
+    font-size: 0.98rem;
+  }
+  .navbar-brand-logo {
+    height: 32px;
+  }
+  .user-info {
+    display: none;
+  }
+  .user-profile-menu {
+    padding: 0.25rem 0.4rem;
+    gap: 0.35rem;
+  }
+  .user-balance-pill {
+    padding: 0.3rem 0.55rem;
+  }
+  .balance-value {
+    font-size: 0.82rem;
+  }
+  .balance-wallet-icon {
+    width: 14px;
+    height: 14px;
+  }
+  .mode-toggle-btn {
+    padding: 0.3rem 0.5rem;
+    font-size: 0.68rem;
+  }
+  .icon-action-btn {
+    width: 28px;
+    height: 28px;
+  }
+  .nav-item {
+    padding: 0.35rem 0.45rem;
+    font-size: 0.74rem;
+    gap: 0.25rem;
+  }
+  .tuition-hero-title {
+    font-size: 1.35rem;
+  }
+  .luxury-glass-panel {
+    padding: 1.25rem 1rem;
+    border-radius: 16px;
+  }
+  .quick-mssv-grid {
+    grid-template-columns: 1fr;
+  }
+  .apple-bank-footer {
+    padding: 0.85rem 1rem;
+    text-align: center;
+  }
+  .apple-footer-inner {
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    gap: 0.45rem;
+    font-size: 0.74rem;
+  }
+  .apple-footer-inner p {
+    text-align: center;
+    line-height: 1.45;
+  }
+  .apple-fullwidth-navbar {
+    padding: 0.5rem 0.85rem;
+  }
+  .navbar-brand-text h1 {
+    font-size: 0.92rem;
+  }
+  .navbar-logo-badge {
+    padding: 0.2rem 0.45rem;
+  }
+  .navbar-tdtu-logo {
+    height: 28px;
+  }
+  .campus-view-toggle-btn {
+    padding: 0.35rem 0.65rem;
+    font-size: 0.72rem;
+  }
+  .page-container,
+  .main-content {
+    padding: 1rem 0.75rem;
+  }
+  .page-header-row {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 1rem;
+  }
+}
+
+/* 4. BREAKPOINT: Màn hình Cực nhỏ (<= 480px) */
+@media screen and (max-width: 480px) {
+  .navbar-wrapper {
+    padding: 0.35rem 0.5rem;
+  }
+  .nav-item span {
+    font-size: 0.7rem;
+  }
+  .tuition-hero-banner {
+    padding: 1.2rem 0.85rem;
+  }
+  .luxury-glass-panel {
+    padding: 1rem 0.75rem;
+  }
+  .apple-info-card,
+  .apple-login-card {
+    padding: 1.25rem 0.85rem;
+    border-radius: 16px;
+  }
+  .apple-main-stage {
+    padding: 0 0.5rem;
+  }
+  .card-pill-btn {
+    padding: 0.35rem 0.5rem;
+    font-size: 0.72rem;
+  }
+  .step-text-wrap h4 {
+    font-size: 0.85rem;
+  }
+  .step-text-wrap p {
+    font-size: 0.75rem;
+  }
+}
+
 
