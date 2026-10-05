@@ -12,24 +12,24 @@ services:
       # - tuition-service # Mở comment khi Quy push code
       # - frontend        # Mở comment khi Long push code
 
-  # 2. Payment Service (Bạn Hoan đã làm xong)
+  # 2. Payment Service Hoan
   payment-service:
     build: ./services/payment-service
     container_name: payment_service
     ports:
       - "8001:8000"
 
-  # 3. OTP Service (Bạn Phúc đã làm xong)
+  # 3. OTP Service Phúc
   otp-service:
     build: ./services/otp-service
     container_name: otp_service
     ports:
       - "8002:8000"
 
-  # 4. User Service (Đạt) - un-comment khi có đủ Dockerfile ở repo
-  # user-service:
-  #   build: ./services/user-service
-  #   container_name: user_service
+  # 4. User Service (Đạt)
+  user-service:
+    build: ./services/user-service
+    container_name: user_service
 
   # 5. Tuition Service (Quy) - un-comment khi có đủ Dockerfile ở repo
   # tuition-service:
