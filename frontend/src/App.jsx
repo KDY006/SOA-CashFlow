@@ -1,13 +1,15 @@
 // App.jsx - Giao diện chính phân hệ Frontend Đóng học phí iBanking (Đồ án SOA)
 // Phụ trách bởi: Long (Frontend Developer)
 
-import React, { useState } from "react";
-import { AuthProvider, useAuth } from "./context/AuthContext";
+import React, { useState, StrictMode } from "react";
+import ReactDOM from "react-dom/client";
+import { AuthProvider, useAuth } from "./services/authContext";
 import Navbar from "./components/Navbar";
 import LoginPage from "./pages/LoginPage";
 import TuitionPaymentPage from "./pages/TuitionPaymentPage";
 import TransactionHistoryPage from "./pages/TransactionHistoryPage";
 import AdminDashboardPage from "./pages/AdminDashboardPage";
+import "./index.css";
 
 function MainContent() {
   const { currentUser } = useAuth();
@@ -61,5 +63,15 @@ export default function App() {
     <AuthProvider>
       <MainContent />
     </AuthProvider>
+  );
+}
+
+// Khởi chạy ứng dụng gắn vào thẻ #root
+const rootElement = document.getElementById("root");
+if (rootElement) {
+  ReactDOM.createRoot(rootElement).render(
+    <StrictMode>
+      <App />
+    </StrictMode>
   );
 }

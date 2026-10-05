@@ -2,11 +2,10 @@
 // Phong cách Apple & Stripe: Parallax SVG Waves, Glassmorphism, Micro-animations sống động
 
 import React, { useState, useEffect } from "react";
-import { useAuth } from "../context/AuthContext";
+import { useAuth } from "../services/authContext";
 import { authApi } from "../services/api";
 import { INITIAL_USERS } from "../services/mockData";
 import FbAvatar from "../components/FbAvatar";
-import campusImg from "../assets/tdtu-campus.jpg";
 import {
   Building2,
   Lock,
@@ -77,7 +76,7 @@ export default function LoginPage() {
       <div className="login-campus-backdrop" aria-hidden="true">
         <div
           className="login-campus-image"
-          style={{ backgroundImage: `url(${campusImg})` }}
+          style={{ backgroundImage: "url(/tdtu-campus.jpg)" }}
         ></div>
         <div className="login-campus-overlay"></div>
       </div>

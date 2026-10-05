@@ -2,7 +2,7 @@
 // Tích hợp các API của 3 bạn Backend: Đạt (User), Quý (Tuition), Hoàn (Payment)
 
 import React, { useState, useEffect } from "react";
-import { useAuth } from "../context/AuthContext";
+import { useAuth } from "../services/authContext";
 import { authApi, tuitionApi, paymentApi } from "../services/api";
 import FbAvatar from "../components/FbAvatar";
 import {

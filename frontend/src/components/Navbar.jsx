@@ -1,7 +1,7 @@
 // Navbar.jsx - Thanh điều hướng chuẩn giao diện Ngân hàng số TDTU iBanking
 
 import React from "react";
-import { useAuth } from "../context/AuthContext";
+import { useAuth } from "../services/authContext";
 import FbAvatar from "./FbAvatar";
 import {
   CreditCard,

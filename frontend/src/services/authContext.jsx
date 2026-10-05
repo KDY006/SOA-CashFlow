@@ -1,7 +1,7 @@
-// AuthContext.jsx - Quản lý trạng thái đăng nhập, thông tin tài khoản và số dư iBanking
+// authContext.jsx - Quản lý trạng thái đăng nhập, thông tin tài khoản và số dư iBanking
 
 import React, { createContext, useContext, useState, useEffect } from "react";
-import { authApi, isMockMode, setMockMode, resetMockData } from "../services/api";
+import { authApi, isMockMode, setMockMode, resetMockData } from "./api";
 
 const AuthContext = createContext();
 

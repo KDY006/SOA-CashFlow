@@ -36,7 +36,9 @@ services:
   #   build: ./services/tution-service
   #   container_name: tuition_service
 
-  # 6. Frontend PHP (Longgehihi) - un-comment khi Long push xong giao diện
-  # frontend:
-  #   build: ./frontend
-  #   container_name: ibanking_frontend
+  # 6. Frontend Web Application (Longgehihi)
+  frontend:
+    build: ./frontend
+    container_name: ibanking_frontend
+    ports:
+      - "3000:80"

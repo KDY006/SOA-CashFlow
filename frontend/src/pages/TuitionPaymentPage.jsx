@@ -2,7 +2,7 @@
 // Tích hợp Step Progress Indicator, Đối soát số dư và Quy trình Core Workflow
 
 import React, { useState } from "react";
-import { useAuth } from "../context/AuthContext";
+import { useAuth } from "../services/authContext";
 import { tuitionApi, otpApi, paymentApi } from "../services/api";
 import OtpModal from "../components/OtpModal";
 import ReceiptModal from "../components/ReceiptModal";

@@ -1,6 +1,6 @@
 // TransactionHistoryPage.jsx - Màn hình Lịch sử Giao dịch chuẩn FinTech cao cấp TDTU iBanking
 import React, { useState, useEffect } from "react";
-import { useAuth } from "../context/AuthContext";
+import { useAuth } from "../services/authContext";
 import { paymentApi } from "../services/api";
 import ReceiptModal from "../components/ReceiptModal";
 import FbAvatar from "../components/FbAvatar";
