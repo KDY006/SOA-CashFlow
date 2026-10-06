@@ -51,3 +51,50 @@ TDTU iBanking
         )
 
         server.send_message(message)
+        
+        
+def send_payment_success_email(
+    recipient_email: str,
+    transaction_id: int,
+    student_id: str,
+    student_name: str,
+    amount: float
+):
+    message = EmailMessage()
+    message["Subject"] = "TDTU iBanking - Thanh toán học phí thành công"
+    message["From"] = f"{settings.SMTP_FROM_NAME} <{settings.SMTP_USER}>"
+    message["To"] = recipient_email
+
+    message.set_content(
+        f"""Xin chào,
+
+Giao dịch thanh toán học phí của bạn đã được thực hiện thành công.
+
+Thông tin giao dịch:
+
+Mã giao dịch: {transaction_id}
+MSSV: {student_id}
+Sinh viên: {student_name}
+Số tiền: {amount:,.0f} VND
+
+Học phí đã được thanh toán thành công.
+
+Cảm ơn bạn đã sử dụng TDTU iBanking.
+
+TDTU iBanking
+"""
+    )
+
+    with smtplib.SMTP(
+        settings.SMTP_HOST,
+        settings.SMTP_PORT,
+        timeout=15
+    ) as server:
+        server.ehlo()
+        server.starttls()
+        server.ehlo()
+        server.login(
+            settings.SMTP_USER,
+            settings.SMTP_PASSWORD
+        )
+        server.send_message(message)
