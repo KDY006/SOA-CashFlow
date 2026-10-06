@@ -3,6 +3,7 @@ from fastapi import FastAPI
 from app.core.database import Base, engine
 from app.models.otp import OTP
 from app.api.otp import router as otp_router
+from app.api.notification import router as notification_router
 
 
 Base.metadata.create_all(bind=engine)
@@ -19,6 +20,7 @@ app = FastAPI(
 
 
 app.include_router(otp_router)
+app.include_router(notification_router)
 
 
 @app.get("/")

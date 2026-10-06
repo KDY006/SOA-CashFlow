@@ -36,3 +36,17 @@ class OTPVerifyResponse(BaseModel):
     message: str
     transaction_id: int
     verified: bool
+    
+    
+class PaymentSuccessNotificationRequest(BaseModel):
+    email: EmailStr
+    transaction_id: int = Field(gt=0)
+    student_id: str = Field(min_length=1, max_length=20)
+    student_name: str = Field(min_length=1, max_length=255)
+    amount: float = Field(gt=0)
+
+
+class PaymentSuccessNotificationResponse(BaseModel):
+    message: str
+    transaction_id: int
+    sent: bool
