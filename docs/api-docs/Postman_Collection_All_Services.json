@@ -1,0 +1,172 @@
+{
+  "info": {
+    "_postman_id": "c1f7b822-e421-4d32-9cb1-cashflow2026",
+    "name": "SOA-CashFlow All Services Collection",
+    "description": "Postman Collection test suite for all 6 microservices via API Gateway",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "Auth Service",
+      "item": [
+        {
+          "name": "Login",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"username\": \"testuser\",\n  \"password\": \"password123\"\n}"
+            },
+            "url": {
+              "raw": "{{GATEWAY_URL}}/api/auth/login",
+              "host": ["{{GATEWAY_URL}}"],
+              "path": ["api", "auth", "login"]
+            }
+          }
+        },
+        {
+          "name": "Register",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"username\": \"testuser\",\n  \"email\": \"user@example.com\",\n  \"password\": \"password123\"\n}"
+            },
+            "url": {
+              "raw": "{{GATEWAY_URL}}/api/auth/register",
+              "host": ["{{GATEWAY_URL}}"],
+              "path": ["api", "auth", "register"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Transaction Service",
+      "item": [
+        {
+          "name": "List Transactions",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{GATEWAY_URL}}/api/transactions",
+              "host": ["{{GATEWAY_URL}}"],
+              "path": ["api", "transactions"]
+            }
+          }
+        },
+        {
+          "name": "Create Transaction",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"amount\": 500000,\n  \"type\": \"expense\",\n  \"category\": \"food\",\n  \"description\": \"Team lunch\"\n}"
+            },
+            "url": {
+              "raw": "{{GATEWAY_URL}}/api/transactions",
+              "host": ["{{GATEWAY_URL}}"],
+              "path": ["api", "transactions"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Asset Service",
+      "item": [
+        {
+          "name": "Get Assets",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{GATEWAY_URL}}/api/assets",
+              "host": ["{{GATEWAY_URL}}"],
+              "path": ["api", "assets"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Analytics Service",
+      "item": [
+        {
+          "name": "Get Financial Summary",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{GATEWAY_URL}}/api/analytics/summary",
+              "host": ["{{GATEWAY_URL}}"],
+              "path": ["api", "analytics", "summary"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Integration Service",
+      "item": [
+        {
+          "name": "Get Bank Exchange Rates",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{GATEWAY_URL}}/api/integrations/rates",
+              "host": ["{{GATEWAY_URL}}"],
+              "path": ["api", "integrations", "rates"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Notification Service",
+      "item": [
+        {
+          "name": "Send Notification",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"userId\": 1,\n  \"message\": \"Your transaction of 500,000 VND was recorded.\"\n}"
+            },
+            "url": {
+              "raw": "{{GATEWAY_URL}}/api/notifications/send",
+              "host": ["{{GATEWAY_URL}}"],
+              "path": ["api", "notifications", "send"]
+            }
+          }
+        }
+      ]
+    }
+  ]
+}

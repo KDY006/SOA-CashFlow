@@ -1,34 +1,73 @@
-# Environment & IDE
+# Environment files
 .env
-.vscode/
+.env.local
+.env.*.local
+
+# Operating System Files
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# IDE & Editor files
 .idea/
+.vscode/
 *.suo
 *.user
+*.userosscache
+*.sln.docstates
+.vs/
 
-# Node.js (Notification Service & Gateway)
+# Node.js / NPM / Yarn / Gateway / Notification
 node_modules/
-npm-debug.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
 
-# Java (Auth Service)
+# Java / Maven / Spring Boot (auth-service)
 target/
 *.class
-.gradle/
-build/
+*.jar
+*.war
+*.ear
+.mvn/wrapper/maven-wrapper.jar
 
-# PHP (Transaction Service)
+# PHP / Composer (transaction-service)
 vendor/
+composer.phar
 .phpunit.result.cache
 
-# C# (Asset Service)
+# .NET / C# (asset-service)
 bin/
 obj/
+*.userprefs
+*.pidb
+*.booproj
 
-# Python (Analytics Service)
+# Python (analytics-service)
 __pycache__/
 *.py[cod]
-*.venv
+*$py.class
 venv/
+.venv/
+env/
+ENV/
+*.egg-info/
+dist/
+build/
 
-# Go (Integration Service)
+# Go (integration-service)
 *.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
 *.out
+
+# Logs
+logs/
+*.log
+
+# Docker
+.dockerignore

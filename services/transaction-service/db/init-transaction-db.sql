@@ -1,0 +1,23 @@
+CREATE DATABASE IF NOT EXISTS transaction_db;
+USE transaction_db;
+
+CREATE TABLE IF NOT EXISTS categories (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    name VARCHAR(50) NOT NULL,
+    type ENUM('INCOME', 'EXPENSE') NOT NULL,
+    icon VARCHAR(100) NULL
+);
+
+CREATE TABLE IF NOT EXISTS transactions (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    user_id BIGINT NOT NULL,
+    category_id INT NULL,
+    category VARCHAR(50) NOT NULL,
+    amount DECIMAL(15, 2) NOT NULL,
+    type ENUM('INCOME', 'EXPENSE', 'TRANSFER') NOT NULL,
+    description TEXT,
+    transaction_date DATETIME DEFAULT CURRENT_TIMESTAMP,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    INDEX idx_user_trans (user_id, transaction_date)
+);

@@ -1,0 +1,17 @@
+CREATE DATABASE IF NOT EXISTS integration_db;
+USE integration_db;
+
+CREATE TABLE IF NOT EXISTS exchange_rates (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    currency_code VARCHAR(10) NOT NULL UNIQUE,
+    rate_to_vnd DECIMAL(15, 4) NOT NULL,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS external_webhooks (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    provider_name VARCHAR(50) NOT NULL,
+    event_type VARCHAR(50) NOT NULL,
+    payload JSON,
+    received_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);

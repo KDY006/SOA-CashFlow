@@ -1,0 +1,13 @@
+{
+  "name": "cashflow/transaction-service",
+  "description": "Transaction microservice for SOA CashFlow (PHP / Laravel)",
+  "type": "project",
+  "require": {
+    "php": "^8.2"
+  },
+  "autoload": {
+    "psr-4": {
+      "App\\": "src/"
+    }
+  }
+}

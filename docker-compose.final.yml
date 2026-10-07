@@ -1,19 +1,17 @@
+# Docker Compose - Báo cáo Cuối kỳ (Triển khai các Services với Framework chuẩn)
 version: '3.8'
 
 services:
-  # ============================================================================
-  # API GATEWAY
-  # ============================================================================
   gateway:
     build:
       context: ./gateway
       dockerfile: Dockerfile
-    container_name: cashflow-gateway
+    container_name: cashflow-gateway-final
     restart: always
     ports:
       - "${GATEWAY_PORT:-8080}:8080"
     environment:
-      - PORT=8080
+      - APP_ENV=production
       - AUTH_SERVICE_URL=http://auth-service:8081
       - TRANSACTION_SERVICE_URL=http://transaction-service:8082
       - ASSET_SERVICE_URL=http://asset-service:8083
@@ -28,190 +26,172 @@ services:
       - integration-service
       - notification-service
     networks:
-      - cashflow-network
+      - final-network
 
-  # ============================================================================
-  # 6 MICROSERVICES (6 LANGUAGES)
-  # ============================================================================
-
-  # 1. Auth Service (Java)
+  # 1. Spring Boot (Java)
   auth-service:
     build:
       context: ./services/auth-service
       dockerfile: Dockerfile
-    container_name: cashflow-auth-service
+    container_name: cashflow-auth-final
     restart: always
     ports:
       - "${AUTH_SERVICE_PORT:-8081}:8081"
     environment:
-      - SERVER_PORT=8081
+      - SPRING_PROFILES_ACTIVE=prod
       - DB_HOST=auth-db
-      - DB_PORT=3306
       - DB_NAME=auth_db
       - DB_USER=root
       - DB_PASSWORD=root_password
     depends_on:
       - auth-db
     networks:
-      - cashflow-network
+      - final-network
 
-  # 2. Transaction Service (PHP)
+  # 2. Laravel (PHP)
   transaction-service:
     build:
       context: ./services/transaction-service
       dockerfile: Dockerfile
-    container_name: cashflow-transaction-service
+    container_name: cashflow-transaction-final
     restart: always
     ports:
       - "${TRANSACTION_SERVICE_PORT:-8082}:8082"
     environment:
-      - PORT=8082
+      - APP_ENV=production
       - DB_HOST=transaction-db
-      - DB_PORT=3306
-      - DB_NAME=transaction_db
-      - DB_USER=root
+      - DB_DATABASE=transaction_db
+      - DB_USERNAME=root
       - DB_PASSWORD=root_password
     depends_on:
       - transaction-db
     networks:
-      - cashflow-network
+      - final-network
 
-  # 3. Asset Service (C# / .NET)
+  # 3. ASP.NET Core (C#)
   asset-service:
     build:
       context: ./services/asset-service
       dockerfile: Dockerfile
-    container_name: cashflow-asset-service
+    container_name: cashflow-asset-final
     restart: always
     ports:
       - "${ASSET_SERVICE_PORT:-8083}:8083"
     environment:
-      - ASPNETCORE_URLS=http://+:8083
+      - ASPNETCORE_ENVIRONMENT=Production
       - DB_HOST=asset-db
-      - DB_PORT=3306
       - DB_NAME=asset_db
       - DB_USER=root
       - DB_PASSWORD=root_password
     depends_on:
       - asset-db
     networks:
-      - cashflow-network
+      - final-network
 
-  # 4. Analytics Service (Python)
+  # 4. FastAPI (Python)
   analytics-service:
     build:
       context: ./services/analytics-service
       dockerfile: Dockerfile
-    container_name: cashflow-analytics-service
+    container_name: cashflow-analytics-final
     restart: always
     ports:
       - "${ANALYTICS_SERVICE_PORT:-8084}:8084"
     environment:
-      - PORT=8084
+      - APP_ENV=production
       - MONGO_URI=mongodb://mongo_admin:mongo_password@analytics-mongo:27017/analytics_db?authSource=admin
     depends_on:
       - analytics-mongo
     networks:
-      - cashflow-network
+      - final-network
 
-  # 5. Integration Service (Go)
+  # 5. Go Gin (Go)
   integration-service:
     build:
       context: ./services/integration-service
       dockerfile: Dockerfile
-    container_name: cashflow-integration-service
+    container_name: cashflow-integration-final
     restart: always
     ports:
       - "${INTEGRATION_SERVICE_PORT:-8085}:8085"
     environment:
-      - PORT=8085
+      - GIN_MODE=release
       - DB_HOST=integration-db
-      - DB_PORT=3306
       - DB_NAME=integration_db
       - DB_USER=root
       - DB_PASSWORD=root_password
     depends_on:
       - integration-db
     networks:
-      - cashflow-network
+      - final-network
 
-  # 6. Notification Service (Node.js)
+  # 6. NestJS / Express (Node.js)
   notification-service:
     build:
       context: ./services/notification-service
       dockerfile: Dockerfile
-    container_name: cashflow-notification-service
+    container_name: cashflow-notification-final
     restart: always
     ports:
       - "${NOTIFICATION_SERVICE_PORT:-8086}:8086"
     environment:
-      - PORT=8086
+      - NODE_ENV=production
       - REDIS_HOST=redis
-      - REDIS_PORT=6379
     depends_on:
       - redis
     networks:
-      - cashflow-network
-
-  # ============================================================================
-  # DATABASES (4 MySQL + 1 MongoDB + 1 Redis)
-  # ============================================================================
+      - final-network
 
   auth-db:
     image: mysql:8.0
-    container_name: cashflow-auth-db
     restart: always
     environment:
       MYSQL_ROOT_PASSWORD: root_password
       MYSQL_DATABASE: auth_db
     volumes:
       - ./services/auth-service/db/init-auth-db.sql:/docker-entrypoint-initdb.d/init.sql
-      - auth_db_data:/var/lib/mysql
+      - auth_final_data:/var/lib/mysql
     networks:
-      - cashflow-network
+      - final-network
 
   transaction-db:
     image: mysql:8.0
-    container_name: cashflow-transaction-db
     restart: always
     environment:
       MYSQL_ROOT_PASSWORD: root_password
       MYSQL_DATABASE: transaction_db
     volumes:
       - ./services/transaction-service/db/init-transaction-db.sql:/docker-entrypoint-initdb.d/init.sql
-      - transaction_db_data:/var/lib/mysql
+      - transaction_final_data:/var/lib/mysql
     networks:
-      - cashflow-network
+      - final-network
 
   asset-db:
     image: mysql:8.0
-    container_name: cashflow-asset-db
     restart: always
     environment:
       MYSQL_ROOT_PASSWORD: root_password
       MYSQL_DATABASE: asset_db
     volumes:
       - ./services/asset-service/db/init-asset-db.sql:/docker-entrypoint-initdb.d/init.sql
-      - asset_db_data:/var/lib/mysql
+      - asset_final_data:/var/lib/mysql
     networks:
-      - cashflow-network
+      - final-network
 
   integration-db:
     image: mysql:8.0
-    container_name: cashflow-integration-db
     restart: always
     environment:
       MYSQL_ROOT_PASSWORD: root_password
       MYSQL_DATABASE: integration_db
     volumes:
       - ./services/integration-service/db/init-integration-db.sql:/docker-entrypoint-initdb.d/init.sql
-      - integration_db_data:/var/lib/mysql
+      - integration_final_data:/var/lib/mysql
     networks:
-      - cashflow-network
+      - final-network
 
   analytics-mongo:
     image: mongo:6.0
-    container_name: cashflow-analytics-mongo
     restart: always
     environment:
       MONGO_INITDB_ROOT_USERNAME: mongo_admin
@@ -219,29 +199,28 @@ services:
       MONGO_INITDB_DATABASE: analytics_db
     volumes:
       - ./services/analytics-service/db/init-mongo.js:/docker-entrypoint-initdb.d/mongo-init.js:ro
-      - mongo_data:/data/db
+      - mongo_final_data:/data/db
     networks:
-      - cashflow-network
+      - final-network
 
   redis:
     image: redis:7-alpine
-    container_name: cashflow-redis
     restart: always
     ports:
       - "6379:6379"
     volumes:
-      - redis_data:/data
+      - redis_final_data:/data
     networks:
-      - cashflow-network
+      - final-network
 
 networks:
-  cashflow-network:
+  final-network:
     driver: bridge
 
 volumes:
-  auth_db_data:
-  transaction_db_data:
-  asset_db_data:
-  integration_db_data:
-  mongo_data:
-  redis_data:
+  auth_final_data:
+  transaction_final_data:
+  asset_final_data:
+  integration_final_data:
+  mongo_final_data:
+  redis_final_data:
