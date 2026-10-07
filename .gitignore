@@ -1,38 +1,34 @@
-# Python
-__pycache__/
-*.pyc
-*.pyo
-*.pyd
-
-# Virtual environments
-venv/
-.venv/
-**/venv/
-**/.venv/
-
-# Environment variables / secrets
+# Environment & IDE
 .env
-.env.local
-**/.env
-
-# Dependencies
-node_modules/
-*/node_modules/
-package-lock.json
-*/package-lock.json
-
-# Production builds
-dist/
-*/dist/
-
-# IDE & OS
 .vscode/
 .idea/
-.DS_Store
-Thumbs.db
+*.suo
+*.user
 
-# Python testing/cache & logs
-*.log
-.pytest_cache/
-.mypy_cache/
-.coverage
+# Node.js (Notification Service & Gateway)
+node_modules/
+npm-debug.log
+
+# Java (Auth Service)
+target/
+*.class
+.gradle/
+build/
+
+# PHP (Transaction Service)
+vendor/
+.phpunit.result.cache
+
+# C# (Asset Service)
+bin/
+obj/
+
+# Python (Analytics Service)
+__pycache__/
+*.py[cod]
+*.venv
+venv/
+
+# Go (Integration Service)
+*.exe
+*.out
