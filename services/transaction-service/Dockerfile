@@ -11,4 +11,4 @@ COPY src/ ./src/
 
 EXPOSE 8082
 
-CMD ["php", "-S", "0.0.0.0:8082", "-t", "src"]
+CMD ["php", "-S", "0.0.0.0:8082", "-t", "src", "src/index.php"]
