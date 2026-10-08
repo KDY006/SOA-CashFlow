@@ -1,5 +1,5 @@
-# Docker Compose - Báo cáo Giữa kỳ (Triển khai các Services với Code thuần / Native)
-version: '3.8'
+# Docker Compose - Midterm
+# Native services
 
 services:
   gateway:
@@ -36,7 +36,12 @@ services:
       - "${AUTH_SERVICE_PORT:-8081}:8081"
     environment:
       - PROFILE=native
-      - DB_HOST=auth-db
+      - DB_HOST=${AUTH_DB_HOST:-auth-db}
+      - DB_PORT=${AUTH_DB_PORT:-3306}
+      - DB_NAME=${AUTH_DB_NAME:-auth_db}
+      - DB_USER=${AUTH_DB_USER:-root}
+      - DB_PASSWORD=${AUTH_DB_PASSWORD:-root_password}
+      - JWT_SECRET=${AUTH_JWT_SECRET:-cashflow-auth-midterm-development-secret-key}
     depends_on:
       - auth-db
     networks:
@@ -122,6 +127,8 @@ services:
     environment:
       MYSQL_ROOT_PASSWORD: root_password
       MYSQL_DATABASE: auth_db
+    ports:
+      - "3307:3306"
     volumes:
       - ./services/auth-service/db/init-auth-db.sql:/docker-entrypoint-initdb.d/init.sql
     networks:
