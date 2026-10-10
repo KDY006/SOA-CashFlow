@@ -46,7 +46,15 @@ INSERT IGNORE INTO investments (id, user_id, symbol, investment_type, quantity, 
 
 -- 4. Seed for Integration Database
 USE integration_db;
-INSERT IGNORE INTO exchange_rates (currency_code, rate_to_vnd, updated_at) VALUES
-('USD', 25400.00, NOW()),
-('EUR', 27200.00, NOW()),
-('JPY', 165.50, NOW());
+INSERT INTO exchange_rates (currency_code, rate_to_vnd) VALUES
+('USD', 25410.0000),
+('EUR', 27620.5000),
+('GBP', 32280.0000),
+('JPY', 168.4500),
+('SGD', 18920.0000),
+('CNY', 3518.2000)
+ON DUPLICATE KEY UPDATE rate_to_vnd = VALUES(rate_to_vnd);
+
+INSERT IGNORE INTO linked_accounts (id, user_id, bank_code, account_no, holder_name, balance) VALUES
+(1, 1, 'VCB', '0071000123456', 'NGUYEN VAN A', 15000000.00),
+(2, 1, 'MOMO', '0909123456', 'NGUYEN VAN A', 2000000.00);

@@ -132,13 +132,25 @@ services:
       context: ./services/integration-service/midterm
       dockerfile: Dockerfile
     container_name: cashflow-integration-midterm
+    restart: on-failure
     ports:
       - "${INTEGRATION_SERVICE_PORT:-8085}:8085"
     environment:
       - PROFILE=native
+      - PORT=8085
       - DB_HOST=integration-db
+      - DB_PORT=3306
+      - DB_NAME=integration_db
+      - DB_USER=root
+      - DB_PASSWORD=root_password
+      - TRANSACTION_SERVICE_URL=http://transaction-service:8082
+      - NOTIFICATION_SERVICE_URL=http://notification-service:8086
+      - WEBHOOK_SECRET=${INTEGRATION_WEBHOOK_SECRET:-}
+      - SYNC_WORKERS=4
     depends_on:
       - integration-db
+      - transaction-service
+      - notification-service
     networks:
       - midterm-network
 
@@ -210,6 +222,7 @@ services:
   integration-db:
     image: mysql:8.0
     container_name: cashflow-integration-db
+    command: --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci
     environment:
       MYSQL_ROOT_PASSWORD: root_password
       MYSQL_DATABASE: integration_db

@@ -16,8 +16,12 @@
             "header": [],
             "url": {
               "raw": "{{GATEWAY_URL}}/health",
-              "host": ["{{GATEWAY_URL}}"],
-              "path": ["health"]
+              "host": [
+                "{{GATEWAY_URL}}"
+              ],
+              "path": [
+                "health"
+              ]
             }
           }
         },
@@ -28,8 +32,12 @@
             "header": [],
             "url": {
               "raw": "{{GATEWAY_URL}}/",
-              "host": ["{{GATEWAY_URL}}"],
-              "path": [""]
+              "host": [
+                "{{GATEWAY_URL}}"
+              ],
+              "path": [
+                ""
+              ]
             }
           }
         }
@@ -43,7 +51,10 @@
           "request": {
             "method": "POST",
             "header": [
-              { "key": "Content-Type", "value": "application/json" }
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
             ],
             "body": {
               "mode": "raw",
@@ -51,8 +62,14 @@
             },
             "url": {
               "raw": "{{GATEWAY_URL}}/api/auth/register",
-              "host": ["{{GATEWAY_URL}}"],
-              "path": ["api", "auth", "register"]
+              "host": [
+                "{{GATEWAY_URL}}"
+              ],
+              "path": [
+                "api",
+                "auth",
+                "register"
+              ]
             }
           }
         },
@@ -76,7 +93,10 @@
           "request": {
             "method": "POST",
             "header": [
-              { "key": "Content-Type", "value": "application/json" }
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
             ],
             "body": {
               "mode": "raw",
@@ -84,8 +104,14 @@
             },
             "url": {
               "raw": "{{GATEWAY_URL}}/api/auth/login",
-              "host": ["{{GATEWAY_URL}}"],
-              "path": ["api", "auth", "login"]
+              "host": [
+                "{{GATEWAY_URL}}"
+              ],
+              "path": [
+                "api",
+                "auth",
+                "login"
+              ]
             }
           }
         },
@@ -94,12 +120,21 @@
           "request": {
             "method": "GET",
             "header": [
-              { "key": "Authorization", "value": "Bearer {{ACCESS_TOKEN}}" }
+              {
+                "key": "Authorization",
+                "value": "Bearer {{ACCESS_TOKEN}}"
+              }
             ],
             "url": {
               "raw": "{{GATEWAY_URL}}/api/auth/validate",
-              "host": ["{{GATEWAY_URL}}"],
-              "path": ["api", "auth", "validate"]
+              "host": [
+                "{{GATEWAY_URL}}"
+              ],
+              "path": [
+                "api",
+                "auth",
+                "validate"
+              ]
             }
           }
         },
@@ -108,12 +143,20 @@
           "request": {
             "method": "GET",
             "header": [
-              { "key": "Authorization", "value": "Bearer {{ACCESS_TOKEN}}" }
+              {
+                "key": "Authorization",
+                "value": "Bearer {{ACCESS_TOKEN}}"
+              }
             ],
             "url": {
               "raw": "{{GATEWAY_URL}}/api/profile",
-              "host": ["{{GATEWAY_URL}}"],
-              "path": ["api", "profile"]
+              "host": [
+                "{{GATEWAY_URL}}"
+              ],
+              "path": [
+                "api",
+                "profile"
+              ]
             }
           }
         }
@@ -127,12 +170,20 @@
           "request": {
             "method": "GET",
             "header": [
-              { "key": "Authorization", "value": "Bearer {{ACCESS_TOKEN}}" }
+              {
+                "key": "Authorization",
+                "value": "Bearer {{ACCESS_TOKEN}}"
+              }
             ],
             "url": {
               "raw": "{{GATEWAY_URL}}/api/categories",
-              "host": ["{{GATEWAY_URL}}"],
-              "path": ["api", "categories"]
+              "host": [
+                "{{GATEWAY_URL}}"
+              ],
+              "path": [
+                "api",
+                "categories"
+              ]
             }
           }
         },
@@ -141,13 +192,26 @@
           "request": {
             "method": "GET",
             "header": [
-              { "key": "Authorization", "value": "Bearer {{ACCESS_TOKEN}}" }
+              {
+                "key": "Authorization",
+                "value": "Bearer {{ACCESS_TOKEN}}"
+              }
             ],
             "url": {
               "raw": "{{GATEWAY_URL}}/api/transactions?limit=20",
-              "host": ["{{GATEWAY_URL}}"],
-              "path": ["api", "transactions"],
-              "query": [{ "key": "limit", "value": "20" }]
+              "host": [
+                "{{GATEWAY_URL}}"
+              ],
+              "path": [
+                "api",
+                "transactions"
+              ],
+              "query": [
+                {
+                  "key": "limit",
+                  "value": "20"
+                }
+              ]
             }
           }
         },
@@ -156,8 +220,14 @@
           "request": {
             "method": "POST",
             "header": [
-              { "key": "Content-Type", "value": "application/json" },
-              { "key": "Authorization", "value": "Bearer {{ACCESS_TOKEN}}" }
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{ACCESS_TOKEN}}"
+              }
             ],
             "body": {
               "mode": "raw",
@@ -165,8 +235,13 @@
             },
             "url": {
               "raw": "{{GATEWAY_URL}}/api/transactions",
-              "host": ["{{GATEWAY_URL}}"],
-              "path": ["api", "transactions"]
+              "host": [
+                "{{GATEWAY_URL}}"
+              ],
+              "path": [
+                "api",
+                "transactions"
+              ]
             }
           }
         },
@@ -175,12 +250,21 @@
           "request": {
             "method": "GET",
             "header": [
-              { "key": "Authorization", "value": "Bearer {{ACCESS_TOKEN}}" }
+              {
+                "key": "Authorization",
+                "value": "Bearer {{ACCESS_TOKEN}}"
+              }
             ],
             "url": {
               "raw": "{{GATEWAY_URL}}/api/budgets/progress",
-              "host": ["{{GATEWAY_URL}}"],
-              "path": ["api", "budgets", "progress"]
+              "host": [
+                "{{GATEWAY_URL}}"
+              ],
+              "path": [
+                "api",
+                "budgets",
+                "progress"
+              ]
             }
           }
         }
@@ -194,12 +278,21 @@
           "request": {
             "method": "GET",
             "header": [
-              { "key": "Authorization", "value": "Bearer {{ACCESS_TOKEN}}" }
+              {
+                "key": "Authorization",
+                "value": "Bearer {{ACCESS_TOKEN}}"
+              }
             ],
             "url": {
               "raw": "{{GATEWAY_URL}}/api/assets/net-worth",
-              "host": ["{{GATEWAY_URL}}"],
-              "path": ["api", "assets", "net-worth"]
+              "host": [
+                "{{GATEWAY_URL}}"
+              ],
+              "path": [
+                "api",
+                "assets",
+                "net-worth"
+              ]
             }
           }
         },
@@ -208,12 +301,20 @@
           "request": {
             "method": "GET",
             "header": [
-              { "key": "Authorization", "value": "Bearer {{ACCESS_TOKEN}}" }
+              {
+                "key": "Authorization",
+                "value": "Bearer {{ACCESS_TOKEN}}"
+              }
             ],
             "url": {
               "raw": "{{GATEWAY_URL}}/api/assets",
-              "host": ["{{GATEWAY_URL}}"],
-              "path": ["api", "assets"]
+              "host": [
+                "{{GATEWAY_URL}}"
+              ],
+              "path": [
+                "api",
+                "assets"
+              ]
             }
           }
         },
@@ -222,8 +323,14 @@
           "request": {
             "method": "POST",
             "header": [
-              { "key": "Content-Type", "value": "application/json" },
-              { "key": "Authorization", "value": "Bearer {{ACCESS_TOKEN}}" }
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{ACCESS_TOKEN}}"
+              }
             ],
             "body": {
               "mode": "raw",
@@ -231,8 +338,14 @@
             },
             "url": {
               "raw": "{{GATEWAY_URL}}/api/assets/depreciation",
-              "host": ["{{GATEWAY_URL}}"],
-              "path": ["api", "assets", "depreciation"]
+              "host": [
+                "{{GATEWAY_URL}}"
+              ],
+              "path": [
+                "api",
+                "assets",
+                "depreciation"
+              ]
             }
           }
         },
@@ -241,8 +354,14 @@
           "request": {
             "method": "POST",
             "header": [
-              { "key": "Content-Type", "value": "application/json" },
-              { "key": "Authorization", "value": "Bearer {{ACCESS_TOKEN}}" }
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{ACCESS_TOKEN}}"
+              }
             ],
             "body": {
               "mode": "raw",
@@ -250,8 +369,14 @@
             },
             "url": {
               "raw": "{{GATEWAY_URL}}/api/loans/calculate",
-              "host": ["{{GATEWAY_URL}}"],
-              "path": ["api", "loans", "calculate"]
+              "host": [
+                "{{GATEWAY_URL}}"
+              ],
+              "path": [
+                "api",
+                "loans",
+                "calculate"
+              ]
             }
           }
         }
@@ -265,12 +390,21 @@
           "request": {
             "method": "GET",
             "header": [
-              { "key": "Authorization", "value": "Bearer {{ACCESS_TOKEN}}" }
+              {
+                "key": "Authorization",
+                "value": "Bearer {{ACCESS_TOKEN}}"
+              }
             ],
             "url": {
               "raw": "{{GATEWAY_URL}}/api/analytics/summary",
-              "host": ["{{GATEWAY_URL}}"],
-              "path": ["api", "analytics", "summary"]
+              "host": [
+                "{{GATEWAY_URL}}"
+              ],
+              "path": [
+                "api",
+                "analytics",
+                "summary"
+              ]
             }
           }
         },
@@ -279,12 +413,21 @@
           "request": {
             "method": "GET",
             "header": [
-              { "key": "Authorization", "value": "Bearer {{ACCESS_TOKEN}}" }
+              {
+                "key": "Authorization",
+                "value": "Bearer {{ACCESS_TOKEN}}"
+              }
             ],
             "url": {
               "raw": "{{GATEWAY_URL}}/api/analytics/category-breakdown",
-              "host": ["{{GATEWAY_URL}}"],
-              "path": ["api", "analytics", "category-breakdown"]
+              "host": [
+                "{{GATEWAY_URL}}"
+              ],
+              "path": [
+                "api",
+                "analytics",
+                "category-breakdown"
+              ]
             }
           }
         },
@@ -293,13 +436,27 @@
           "request": {
             "method": "GET",
             "header": [
-              { "key": "Authorization", "value": "Bearer {{ACCESS_TOKEN}}" }
+              {
+                "key": "Authorization",
+                "value": "Bearer {{ACCESS_TOKEN}}"
+              }
             ],
             "url": {
               "raw": "{{GATEWAY_URL}}/api/analytics/trends?months=6",
-              "host": ["{{GATEWAY_URL}}"],
-              "path": ["api", "analytics", "trends"],
-              "query": [{ "key": "months", "value": "6" }]
+              "host": [
+                "{{GATEWAY_URL}}"
+              ],
+              "path": [
+                "api",
+                "analytics",
+                "trends"
+              ],
+              "query": [
+                {
+                  "key": "months",
+                  "value": "6"
+                }
+              ]
             }
           }
         }
@@ -309,16 +466,487 @@
       "name": "5. Integration Service (Go Native - 8085)",
       "item": [
         {
+          "name": "Health Check",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{INTEGRATION_URL}}/health",
+              "host": [
+                "{{INTEGRATION_URL}}"
+              ],
+              "path": [
+                "health"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status code 200 OK\", function () { pm.response.to.have.status(200); });",
+                  "pm.test(\"DB status UP\", function () { var j = pm.response.json(); pm.expect(j.database).to.eql(\"UP\"); });"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
           "name": "Get Bank Exchange Rates (Công khai)",
           "request": {
             "method": "GET",
             "header": [],
             "url": {
               "raw": "{{GATEWAY_URL}}/api/integrations/rates",
-              "host": ["{{GATEWAY_URL}}"],
-              "path": ["api", "integrations", "rates"]
+              "host": [
+                "{{GATEWAY_URL}}"
+              ],
+              "path": [
+                "api",
+                "integrations",
+                "rates"
+              ]
             }
-          }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status code 200 OK\", function () { pm.response.to.have.status(200); });",
+                  "pm.test(\"Trả về danh sách 6 tỷ giá\", function () { var j = pm.response.json(); pm.expect(j.data.length).to.be.at.least(1); });"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get Rate By Currency",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{GATEWAY_URL}}/api/integrations/rates?currency=USD",
+              "host": [
+                "{{GATEWAY_URL}}"
+              ],
+              "path": [
+                "api",
+                "integrations",
+                "rates"
+              ],
+              "query": [
+                {
+                  "key": "currency",
+                  "value": "USD"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status code 200 OK\", function () { pm.response.to.have.status(200); });",
+                  "pm.test(\"Lọc đúng USD\", function () { var j = pm.response.json(); pm.expect(j.data[0].currency_code).to.eql(\"USD\"); });"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "Sync Rates From Banks (song song VCB/TCB/BIDV)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{ACCESS_TOKEN}}"
+              }
+            ],
+            "url": {
+              "raw": "{{GATEWAY_URL}}/api/integrations/sync-rates",
+              "host": [
+                "{{GATEWAY_URL}}"
+              ],
+              "path": [
+                "api",
+                "integrations",
+                "sync-rates"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status code 200 hoặc 503\", function () { pm.expect(pm.response.code).to.be.oneOf([200, 503]); });"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "List Linked Accounts",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{ACCESS_TOKEN}}"
+              }
+            ],
+            "url": {
+              "raw": "{{GATEWAY_URL}}/api/integrations/accounts?user_id=1",
+              "host": [
+                "{{GATEWAY_URL}}"
+              ],
+              "path": [
+                "api",
+                "integrations",
+                "accounts"
+              ],
+              "query": [
+                {
+                  "key": "user_id",
+                  "value": "1"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status code 200 OK\", function () { pm.response.to.have.status(200); });",
+                  "pm.test(\"Trả về danh sách tài khoản\", function () { var j = pm.response.json(); pm.expect(j.data).to.be.an(\"array\"); });"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "Link New Account",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{ACCESS_TOKEN}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"user_id\": 1,\n  \"bank_code\": \"ACB\",\n  \"account_no\": \"123456789\",\n  \"holder_name\": \"NGUYEN VAN A\",\n  \"initial_balance\": 1000000\n}"
+            },
+            "url": {
+              "raw": "{{GATEWAY_URL}}/api/integrations/accounts",
+              "host": [
+                "{{GATEWAY_URL}}"
+              ],
+              "path": [
+                "api",
+                "integrations",
+                "accounts"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status 201 Created hoặc 409 Trùng lặp\", function () { pm.expect(pm.response.code).to.be.oneOf([201, 409]); });"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get Account Detail",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{ACCESS_TOKEN}}"
+              }
+            ],
+            "url": {
+              "raw": "{{GATEWAY_URL}}/api/integrations/accounts/1",
+              "host": [
+                "{{GATEWAY_URL}}"
+              ],
+              "path": [
+                "api",
+                "integrations",
+                "accounts",
+                "1"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status code 200 OK\", function () { pm.response.to.have.status(200); });",
+                  "pm.test(\"Chi tiết tài khoản #1\", function () { var j = pm.response.json(); pm.expect(j.data.id).to.eql(1); });"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get Account Bank Transactions",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{ACCESS_TOKEN}}"
+              }
+            ],
+            "url": {
+              "raw": "{{GATEWAY_URL}}/api/integrations/accounts/1/transactions?limit=20",
+              "host": [
+                "{{GATEWAY_URL}}"
+              ],
+              "path": [
+                "api",
+                "integrations",
+                "accounts",
+                "1",
+                "transactions"
+              ],
+              "query": [
+                {
+                  "key": "limit",
+                  "value": "20"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status code 200 OK\", function () { pm.response.to.have.status(200); });",
+                  "pm.test(\"Lịch sử giao dịch mảng JSON\", function () { var j = pm.response.json(); pm.expect(j.data).to.be.an(\"array\"); });"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "Bank Webhook - Biến động số dư (ngân hàng gọi vào)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "VCB:FT26283000123"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"provider\": \"VCB\",\n  \"external_ref\": \"FT26283000123\",\n  \"bank_code\": \"VCB\",\n  \"account_no\": \"0071000123456\",\n  \"direction\": \"DEBIT\",\n  \"amount\": 250000,\n  \"category\": \"Ăn uống & Cà phê\",\n  \"description\": \"THANH TOAN GRABFOOD\",\n  \"occurred_at\": \"2026-10-10 12:30:00\"\n}"
+            },
+            "url": {
+              "raw": "{{INTEGRATION_URL}}/api/integrations/webhooks/banking",
+              "host": [
+                "{{INTEGRATION_URL}}"
+              ],
+              "path": [
+                "api",
+                "integrations",
+                "webhooks",
+                "banking"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status 201 Created hoặc 200 Trùng lặp\", function () { pm.expect(pm.response.code).to.be.oneOf([200, 201]); });",
+                  "pm.test(\"Thành công\", function () { var j = pm.response.json(); pm.expect(j.success).to.be.true; });"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get Bank Transaction Detail",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{ACCESS_TOKEN}}"
+              }
+            ],
+            "url": {
+              "raw": "{{GATEWAY_URL}}/api/integrations/bank-transactions/1",
+              "host": [
+                "{{GATEWAY_URL}}"
+              ],
+              "path": [
+                "api",
+                "integrations",
+                "bank-transactions",
+                "1"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status 200 hoặc 404\", function () { pm.expect(pm.response.code).to.be.oneOf([200, 404]); });"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "Retry Sync To Transaction Service",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{ACCESS_TOKEN}}"
+              }
+            ],
+            "url": {
+              "raw": "{{GATEWAY_URL}}/api/integrations/bank-transactions/1/retry",
+              "host": [
+                "{{GATEWAY_URL}}"
+              ],
+              "path": [
+                "api",
+                "integrations",
+                "bank-transactions",
+                "1",
+                "retry"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status 200, 202 hoặc 409\", function () { pm.expect(pm.response.code).to.be.oneOf([200, 202, 409]); });"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "Simulate Concurrency - safe (có khóa)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"account_id\": 1,\n  \"events\": 200,\n  \"workers\": 50,\n  \"duplicate_rate\": 0.5,\n  \"mode\": \"safe\",\n  \"sync\": false\n}"
+            },
+            "url": {
+              "raw": "{{INTEGRATION_URL}}/api/integrations/simulate",
+              "host": [
+                "{{INTEGRATION_URL}}"
+              ],
+              "path": [
+                "api",
+                "integrations",
+                "simulate"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status code 200 OK\", function () { pm.response.to.have.status(200); });",
+                  "pm.test(\"Chế độ safe: số dư nhất quán 100%\", function () { var j = pm.response.json(); pm.expect(j.data.consistent).to.be.true; pm.expect(j.data.difference).to.eql(0); });"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "Simulate Concurrency - unsafe (tắt khóa để so sánh)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"account_id\": 3,\n  \"events\": 200,\n  \"workers\": 50,\n  \"duplicate_rate\": 0.5,\n  \"mode\": \"unsafe\"\n}"
+            },
+            "url": {
+              "raw": "{{INTEGRATION_URL}}/api/integrations/simulate",
+              "host": [
+                "{{INTEGRATION_URL}}"
+              ],
+              "path": [
+                "api",
+                "integrations",
+                "simulate"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status code 200 OK\", function () { pm.response.to.have.status(200); });",
+                  "pm.test(\"Chế độ unsafe: phát hiện sai lệch số dư\", function () { var j = pm.response.json(); pm.expect(j.data.consistent).to.be.false; });"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
         }
       ]
     },
@@ -330,12 +958,22 @@
           "request": {
             "method": "GET",
             "header": [
-              { "key": "Authorization", "value": "Bearer {{ACCESS_TOKEN}}" }
+              {
+                "key": "Authorization",
+                "value": "Bearer {{ACCESS_TOKEN}}"
+              }
             ],
             "url": {
               "raw": "{{GATEWAY_URL}}/api/notifications/user/1",
-              "host": ["{{GATEWAY_URL}}"],
-              "path": ["api", "notifications", "user", "1"]
+              "host": [
+                "{{GATEWAY_URL}}"
+              ],
+              "path": [
+                "api",
+                "notifications",
+                "user",
+                "1"
+              ]
             }
           }
         },
@@ -344,8 +982,14 @@
           "request": {
             "method": "POST",
             "header": [
-              { "key": "Content-Type", "value": "application/json" },
-              { "key": "Authorization", "value": "Bearer {{ACCESS_TOKEN}}" }
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{ACCESS_TOKEN}}"
+              }
             ],
             "body": {
               "mode": "raw",
@@ -353,8 +997,14 @@
             },
             "url": {
               "raw": "{{GATEWAY_URL}}/api/notifications/send",
-              "host": ["{{GATEWAY_URL}}"],
-              "path": ["api", "notifications", "send"]
+              "host": [
+                "{{GATEWAY_URL}}"
+              ],
+              "path": [
+                "api",
+                "notifications",
+                "send"
+              ]
             }
           }
         },
@@ -363,12 +1013,21 @@
           "request": {
             "method": "PUT",
             "header": [
-              { "key": "Authorization", "value": "Bearer {{ACCESS_TOKEN}}" }
+              {
+                "key": "Authorization",
+                "value": "Bearer {{ACCESS_TOKEN}}"
+              }
             ],
             "url": {
               "raw": "{{GATEWAY_URL}}/api/notifications/read-all",
-              "host": ["{{GATEWAY_URL}}"],
-              "path": ["api", "notifications", "read-all"]
+              "host": [
+                "{{GATEWAY_URL}}"
+              ],
+              "path": [
+                "api",
+                "notifications",
+                "read-all"
+              ]
             }
           }
         }
