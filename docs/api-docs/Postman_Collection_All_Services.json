@@ -1,27 +1,86 @@
 {
   "info": {
-    "_postman_id": "c1f7b822-e421-4d32-9cb1-cashflow2026",
-    "name": "SOA-CashFlow All Services Collection",
-    "description": "Postman Collection test suite for all 6 microservices via API Gateway",
+    "_postman_id": "c1f7b822-e421-4d32-9cb1-cashflow2026-full",
+    "name": "SOA-CashFlow Full Microservices Collection (Midterm)",
+    "description": "Bộ kiểm thử Postman tích hợp đầy đủ 6 Microservices qua API Gateway (Port 8080) cho báo cáo Giữa kỳ",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "item": [
     {
-      "name": "Auth Service",
+      "name": "0. API Gateway & Health",
       "item": [
         {
-          "name": "Login",
+          "name": "Gateway Health Check",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{GATEWAY_URL}}/health",
+              "host": ["{{GATEWAY_URL}}"],
+              "path": ["health"]
+            }
+          }
+        },
+        {
+          "name": "Gateway Service Directory",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{GATEWAY_URL}}/",
+              "host": ["{{GATEWAY_URL}}"],
+              "path": [""]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "1. Auth Service (Java Native - 8081)",
+      "item": [
+        {
+          "name": "Register User",
           "request": {
             "method": "POST",
             "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
+              { "key": "Content-Type", "value": "application/json" }
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"username\": \"testuser\",\n  \"password\": \"password123\"\n}"
+              "raw": "{\n  \"username\": \"testuser\",\n  \"email\": \"testuser@cashflow.local\",\n  \"password\": \"password123\",\n  \"fullName\": \"Nguyen Van Test\",\n  \"phoneNumber\": \"0988776655\"\n}"
+            },
+            "url": {
+              "raw": "{{GATEWAY_URL}}/api/auth/register",
+              "host": ["{{GATEWAY_URL}}"],
+              "path": ["api", "auth", "register"]
+            }
+          }
+        },
+        {
+          "name": "Login (Tự động gán ACCESS_TOKEN)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "var jsonData = pm.response.json();",
+                  "if (jsonData.accessToken) {",
+                  "    pm.environment.set(\"ACCESS_TOKEN\", jsonData.accessToken);",
+                  "    console.log(\"Saved ACCESS_TOKEN:\", jsonData.accessToken);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"username\": \"admin\",\n  \"password\": \"password123\"\n}"
             },
             "url": {
               "raw": "{{GATEWAY_URL}}/api/auth/login",
@@ -31,36 +90,79 @@
           }
         },
         {
-          "name": "Register",
+          "name": "Validate JWT Token",
           "request": {
-            "method": "POST",
+            "method": "GET",
             "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
+              { "key": "Authorization", "value": "Bearer {{ACCESS_TOKEN}}" }
             ],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"username\": \"testuser\",\n  \"email\": \"user@example.com\",\n  \"password\": \"password123\"\n}"
-            },
             "url": {
-              "raw": "{{GATEWAY_URL}}/api/auth/register",
+              "raw": "{{GATEWAY_URL}}/api/auth/validate",
               "host": ["{{GATEWAY_URL}}"],
-              "path": ["api", "auth", "register"]
+              "path": ["api", "auth", "validate"]
+            }
+          }
+        },
+        {
+          "name": "Get User Profile",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{ACCESS_TOKEN}}" }
+            ],
+            "url": {
+              "raw": "{{GATEWAY_URL}}/api/profile",
+              "host": ["{{GATEWAY_URL}}"],
+              "path": ["api", "profile"]
             }
           }
         }
       ]
     },
     {
-      "name": "Transaction Service",
+      "name": "2. Transaction & Budget Service (PHP Native - 8082)",
       "item": [
+        {
+          "name": "Get All Categories",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{ACCESS_TOKEN}}" }
+            ],
+            "url": {
+              "raw": "{{GATEWAY_URL}}/api/categories",
+              "host": ["{{GATEWAY_URL}}"],
+              "path": ["api", "categories"]
+            }
+          }
+        },
         {
           "name": "List Transactions",
           "request": {
             "method": "GET",
-            "header": [],
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{ACCESS_TOKEN}}" }
+            ],
+            "url": {
+              "raw": "{{GATEWAY_URL}}/api/transactions?limit=20",
+              "host": ["{{GATEWAY_URL}}"],
+              "path": ["api", "transactions"],
+              "query": [{ "key": "limit", "value": "20" }]
+            }
+          }
+        },
+        {
+          "name": "Create Expense Transaction (Kích hoạt Cảnh báo Ngân sách)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{ACCESS_TOKEN}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"amount\": 850000,\n  \"type\": \"EXPENSE\",\n  \"category_id\": 3,\n  \"category\": \"Ăn uống & Cà phê\",\n  \"description\": \"Tiệc liên hoan cuối tuần cùng bạn bè\"\n}"
+            },
             "url": {
               "raw": "{{GATEWAY_URL}}/api/transactions",
               "host": ["{{GATEWAY_URL}}"],
@@ -69,67 +171,145 @@
           }
         },
         {
-          "name": "Create Transaction",
+          "name": "Get Budget Progress Report",
           "request": {
-            "method": "POST",
+            "method": "GET",
             "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
+              { "key": "Authorization", "value": "Bearer {{ACCESS_TOKEN}}" }
             ],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"amount\": 500000,\n  \"type\": \"expense\",\n  \"category\": \"food\",\n  \"description\": \"Team lunch\"\n}"
-            },
             "url": {
-              "raw": "{{GATEWAY_URL}}/api/transactions",
+              "raw": "{{GATEWAY_URL}}/api/budgets/progress",
               "host": ["{{GATEWAY_URL}}"],
-              "path": ["api", "transactions"]
+              "path": ["api", "budgets", "progress"]
             }
           }
         }
       ]
     },
     {
-      "name": "Asset Service",
+      "name": "3. Asset Service (C# Native - 8083)",
       "item": [
         {
-          "name": "Get Assets",
+          "name": "Get Net Worth (Tài sản ròng)",
           "request": {
             "method": "GET",
-            "header": [],
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{ACCESS_TOKEN}}" }
+            ],
+            "url": {
+              "raw": "{{GATEWAY_URL}}/api/assets/net-worth",
+              "host": ["{{GATEWAY_URL}}"],
+              "path": ["api", "assets", "net-worth"]
+            }
+          }
+        },
+        {
+          "name": "List Assets",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{ACCESS_TOKEN}}" }
+            ],
             "url": {
               "raw": "{{GATEWAY_URL}}/api/assets",
               "host": ["{{GATEWAY_URL}}"],
               "path": ["api", "assets"]
             }
           }
-        }
-      ]
-    },
-    {
-      "name": "Analytics Service",
-      "item": [
+        },
         {
-          "name": "Get Financial Summary",
+          "name": "Calculate Asset Depreciation",
           "request": {
-            "method": "GET",
-            "header": [],
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{ACCESS_TOKEN}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"purchase_price\": 65000000,\n  \"salvage_value\": 10000000,\n  \"useful_life_years\": 3\n}"
+            },
             "url": {
-              "raw": "{{GATEWAY_URL}}/api/analytics/summary",
+              "raw": "{{GATEWAY_URL}}/api/assets/depreciation",
               "host": ["{{GATEWAY_URL}}"],
-              "path": ["api", "analytics", "summary"]
+              "path": ["api", "assets", "depreciation"]
+            }
+          }
+        },
+        {
+          "name": "Calculate Loan Installment",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{ACCESS_TOKEN}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"principal_amount\": 20000000,\n  \"interest_rate\": 9.5,\n  \"term_months\": 12\n}"
+            },
+            "url": {
+              "raw": "{{GATEWAY_URL}}/api/loans/calculate",
+              "host": ["{{GATEWAY_URL}}"],
+              "path": ["api", "loans", "calculate"]
             }
           }
         }
       ]
     },
     {
-      "name": "Integration Service",
+      "name": "4. Analytics Service (Python Native - 8084)",
       "item": [
         {
-          "name": "Get Bank Exchange Rates",
+          "name": "Get Cash Flow Summary",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{ACCESS_TOKEN}}" }
+            ],
+            "url": {
+              "raw": "{{GATEWAY_URL}}/api/analytics/summary",
+              "host": ["{{GATEWAY_URL}}"],
+              "path": ["api", "analytics", "summary"]
+            }
+          }
+        },
+        {
+          "name": "Get Category Breakdown",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{ACCESS_TOKEN}}" }
+            ],
+            "url": {
+              "raw": "{{GATEWAY_URL}}/api/analytics/category-breakdown",
+              "host": ["{{GATEWAY_URL}}"],
+              "path": ["api", "analytics", "category-breakdown"]
+            }
+          }
+        },
+        {
+          "name": "Get Trends & Anomalies (MAD Forecast)",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{ACCESS_TOKEN}}" }
+            ],
+            "url": {
+              "raw": "{{GATEWAY_URL}}/api/analytics/trends?months=6",
+              "host": ["{{GATEWAY_URL}}"],
+              "path": ["api", "analytics", "trends"],
+              "query": [{ "key": "months", "value": "6" }]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "5. Integration Service (Go Native - 8085)",
+      "item": [
+        {
+          "name": "Get Bank Exchange Rates (Công khai)",
           "request": {
             "method": "GET",
             "header": [],
@@ -143,26 +323,52 @@
       ]
     },
     {
-      "name": "Notification Service",
+      "name": "6. Notification Service (Node.js Native - 8086)",
       "item": [
         {
-          "name": "Send Notification",
+          "name": "Get User Notifications History",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{ACCESS_TOKEN}}" }
+            ],
+            "url": {
+              "raw": "{{GATEWAY_URL}}/api/notifications/user/1",
+              "host": ["{{GATEWAY_URL}}"],
+              "path": ["api", "notifications", "user", "1"]
+            }
+          }
+        },
+        {
+          "name": "Send Manual Financial Alert",
           "request": {
             "method": "POST",
             "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{ACCESS_TOKEN}}" }
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"userId\": 1,\n  \"message\": \"Your transaction of 500,000 VND was recorded.\"\n}"
+              "raw": "{\n  \"userId\": 1,\n  \"type\": \"BUDGET_ALERT\",\n  \"title\": \"Cảnh báo Bội chi Ngân sách\",\n  \"message\": \"Bạn vừa chi tiêu 850,000 VND cho Ăn uống & Cà phê, vượt 15% định mức tháng 10/2026.\"\n}"
             },
             "url": {
               "raw": "{{GATEWAY_URL}}/api/notifications/send",
               "host": ["{{GATEWAY_URL}}"],
               "path": ["api", "notifications", "send"]
+            }
+          }
+        },
+        {
+          "name": "Mark All Notifications as Read",
+          "request": {
+            "method": "PUT",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{ACCESS_TOKEN}}" }
+            ],
+            "url": {
+              "raw": "{{GATEWAY_URL}}/api/notifications/read-all",
+              "host": ["{{GATEWAY_URL}}"],
+              "path": ["api", "notifications", "read-all"]
             }
           }
         }

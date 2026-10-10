@@ -1,0 +1,22 @@
+{
+  "name": "cashflow-api-gateway",
+  "version": "1.0.0",
+  "description": "Native Node.js API Gateway for SOA CashFlow (Zero-dependency)",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js",
+    "dev": "node --watch src/index.js"
+  },
+  "keywords": [
+    "soa",
+    "gateway",
+    "reverse-proxy",
+    "cashflow",
+    "native-nodejs"
+  ],
+  "author": "Nhóm trưởng",
+  "license": "ISC",
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}

@@ -1,22 +1,31 @@
-# Docker Compose - Midterm
-# Native services
+# =============================================================================
+# SOA-CashFlow: Docker Compose - Báo cáo Giữa kỳ (Triển khai Services Native)
+# Kiến trúc 6 Microservices + API Gateway + 4 MySQL + 1 MongoDB + 1 Redis
+# =============================================================================
+version: '3.8'
 
 services:
+  # ---------------------------------------------------------------------------
+  # API GATEWAY (Nhóm trưởng - Native Node.js Zero-dependency)
+  # ---------------------------------------------------------------------------
   gateway:
     build:
-      context: ./gateway
+      context: ./gateway/midterm
       dockerfile: Dockerfile
     container_name: cashflow-gateway-midterm
     ports:
       - "${GATEWAY_PORT:-8080}:8080"
     environment:
       - APP_ENV=midterm
+      - GATEWAY_PORT=8080
+      - GATEWAY_HOST=0.0.0.0
       - AUTH_SERVICE_URL=http://auth-service:8081
       - TRANSACTION_SERVICE_URL=http://transaction-service:8082
       - ASSET_SERVICE_URL=http://asset-service:8083
       - ANALYTICS_SERVICE_URL=http://analytics-service:8084
       - INTEGRATION_SERVICE_URL=http://integration-service:8085
       - NOTIFICATION_SERVICE_URL=http://notification-service:8086
+      - JWT_SECRET=${AUTH_JWT_SECRET:-cashflow-auth-midterm-development-secret-key}
     depends_on:
       - auth-service
       - transaction-service
@@ -27,9 +36,12 @@ services:
     networks:
       - midterm-network
 
+  # ---------------------------------------------------------------------------
+  # 1. AUTH SERVICE (Thành viên 1 - Java 17 Native HttpServer)
+  # ---------------------------------------------------------------------------
   auth-service:
     build:
-      context: ./services/auth-service
+      context: ./services/auth-service/midterm
       dockerfile: Dockerfile
     container_name: cashflow-auth-midterm
     ports:
@@ -47,9 +59,12 @@ services:
     networks:
       - midterm-network
 
+  # ---------------------------------------------------------------------------
+  # 2. TRANSACTION SERVICE (Thành viên 2 - PHP 8.2 Native PDO)
+  # ---------------------------------------------------------------------------
   transaction-service:
     build:
-      context: ./services/transaction-service
+      context: ./services/transaction-service/midterm
       dockerfile: Dockerfile
     container_name: cashflow-transaction-midterm
     ports:
@@ -57,44 +72,64 @@ services:
     environment:
       - PROFILE=native
       - DB_HOST=transaction-db
+      - DB_PORT=3306
+      - DB_NAME=transaction_db
+      - DB_USER=root
+      - DB_PASSWORD=root_password
     depends_on:
       - transaction-db
     networks:
       - midterm-network
 
+  # ---------------------------------------------------------------------------
+  # 3. ASSET SERVICE (Thành viên 3 - C# Native HttpListener)
+  # ---------------------------------------------------------------------------
   asset-service:
     build:
-      context: ./services/asset-service
+      context: ./services/asset-service/midterm
       dockerfile: Dockerfile
     container_name: cashflow-asset-midterm
     ports:
       - "${ASSET_SERVICE_PORT:-8083}:8083"
     environment:
       - PROFILE=native
+      - PORT=8083
+      - LISTEN_HOST=0.0.0.0
       - DB_HOST=asset-db
+      - DB_CONNECTION=Server=asset-db;Port=3306;Database=asset_db;Uid=root;Pwd=root_password;
     depends_on:
       - asset-db
     networks:
       - midterm-network
 
+  # ---------------------------------------------------------------------------
+  # 4. ANALYTICS SERVICE (Thành viên 4 - Python Native http.server)
+  # ---------------------------------------------------------------------------
   analytics-service:
     build:
-      context: ./services/analytics-service
+      context: ./services/analytics-service/midterm
       dockerfile: Dockerfile
     container_name: cashflow-analytics-midterm
     ports:
       - "${ANALYTICS_SERVICE_PORT:-8084}:8084"
     environment:
       - PROFILE=native
+      - HOST=0.0.0.0
+      - PORT=8084
+      - TRANSACTION_SERVICE_URL=http://transaction-service:8082
       - MONGO_URI=mongodb://mongo_admin:mongo_password@analytics-mongo:27017/analytics_db?authSource=admin
     depends_on:
       - analytics-mongo
+      - transaction-service
     networks:
       - midterm-network
 
+  # ---------------------------------------------------------------------------
+  # 5. INTEGRATION SERVICE (Thành viên 5 - Go Native net/http)
+  # ---------------------------------------------------------------------------
   integration-service:
     build:
-      context: ./services/integration-service
+      context: ./services/integration-service/midterm
       dockerfile: Dockerfile
     container_name: cashflow-integration-midterm
     ports:
@@ -107,23 +142,35 @@ services:
     networks:
       - midterm-network
 
+  # ---------------------------------------------------------------------------
+  # 6. NOTIFICATION SERVICE (Nhóm trưởng - Node.js Native SSE + Redis)
+  # ---------------------------------------------------------------------------
   notification-service:
     build:
-      context: ./services/notification-service
+      context: ./services/notification-service/midterm
       dockerfile: Dockerfile
     container_name: cashflow-notification-midterm
     ports:
       - "${NOTIFICATION_SERVICE_PORT:-8086}:8086"
     environment:
       - PROFILE=native
+      - HOST=0.0.0.0
+      - NOTIFICATION_SERVICE_PORT=8086
       - REDIS_HOST=redis
+      - REDIS_PORT=6379
     depends_on:
       - redis
     networks:
       - midterm-network
 
+  # ===========================================================================
+  # CƠ SỞ DỮ LIỆU & MESSAGE BROKERS
+  # ===========================================================================
+
+  # 1. MySQL cho Auth Service
   auth-db:
     image: mysql:8.0
+    container_name: cashflow-auth-db
     environment:
       MYSQL_ROOT_PASSWORD: root_password
       MYSQL_DATABASE: auth_db
@@ -134,8 +181,10 @@ services:
     networks:
       - midterm-network
 
+  # 2. MySQL cho Transaction Service
   transaction-db:
     image: mysql:8.0
+    container_name: cashflow-transaction-db
     command: --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci
     environment:
       MYSQL_ROOT_PASSWORD: root_password
@@ -145,8 +194,10 @@ services:
     networks:
       - midterm-network
 
+  # 3. MySQL cho Asset Service
   asset-db:
     image: mysql:8.0
+    container_name: cashflow-asset-db
     environment:
       MYSQL_ROOT_PASSWORD: root_password
       MYSQL_DATABASE: asset_db
@@ -155,8 +206,10 @@ services:
     networks:
       - midterm-network
 
+  # 4. MySQL cho Integration Service
   integration-db:
     image: mysql:8.0
+    container_name: cashflow-integration-db
     environment:
       MYSQL_ROOT_PASSWORD: root_password
       MYSQL_DATABASE: integration_db
@@ -165,8 +218,10 @@ services:
     networks:
       - midterm-network
 
+  # 5. MongoDB cho Analytics Service
   analytics-mongo:
     image: mongo:6.0
+    container_name: cashflow-analytics-mongo
     environment:
       MONGO_INITDB_ROOT_USERNAME: mongo_admin
       MONGO_INITDB_ROOT_PASSWORD: mongo_password
@@ -176,11 +231,19 @@ services:
     networks:
       - midterm-network
 
+  # 6. Redis cho Notification Service Pub/Sub
   redis:
     image: redis:7-alpine
+    container_name: cashflow-redis
+    ports:
+      - "6379:6379"
     networks:
       - midterm-network
 
+# =============================================================================
+# MẠNG NỘI BỘ
+# =============================================================================
 networks:
   midterm-network:
+    name: cashflow-midterm-net
     driver: bridge
