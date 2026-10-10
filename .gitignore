@@ -2,6 +2,7 @@
 .env
 .env.local
 .env.*.local
+**/target/
 
 # Operating System Files
 .DS_Store
