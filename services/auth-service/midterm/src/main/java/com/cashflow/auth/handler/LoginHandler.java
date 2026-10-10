@@ -6,6 +6,7 @@ import com.cashflow.auth.service.AuthService;
 import com.cashflow.auth.util.JsonUtil;
 import com.cashflow.auth.util.JwtUtil;
 import com.cashflow.auth.util.RefreshTokenUtil;
+import com.fasterxml.jackson.core.JsonProcessingException;
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpHandler;
 
@@ -47,11 +48,24 @@ public class LoginHandler implements HttpHandler {
         }
 
         try {
-            Map<?, ?> request =
-                    JsonUtil.getObjectMapper().readValue(
-                            exchange.getRequestBody(),
-                            Map.class
-                    );
+            Map<?, ?> request;
+            try {
+                Object body = JsonUtil.getObjectMapper().readValue(
+                        exchange.getRequestBody(),
+                        Object.class
+                );
+                if (!(body instanceof Map)) {
+                    throw new IllegalStateException();
+                }
+                request = (Map<?, ?>) body;
+            } catch (JsonProcessingException | IllegalStateException e) {
+                // body rỗng / sai json thì là lỗi phía client, không phải 500
+                Map<String, Object> error = new LinkedHashMap<>();
+                error.put("success", false);
+                error.put("message", "Request body must be a valid JSON object");
+                sendResponse(exchange, 400, error);
+                return;
+            }
 
             String username =
                     getString(request, "username");
