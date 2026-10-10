@@ -24,6 +24,14 @@ public class RegisterHandler implements HttpHandler {
     @Override
     public void handle(HttpExchange exchange) throws IOException {
 
+        if ("OPTIONS".equalsIgnoreCase(exchange.getRequestMethod())) {
+            exchange.getResponseHeaders().set("Access-Control-Allow-Origin", "*");
+            exchange.getResponseHeaders().set("Access-Control-Allow-Methods", "POST, OPTIONS");
+            exchange.getResponseHeaders().set("Access-Control-Allow-Headers", "Content-Type, Authorization");
+            exchange.sendResponseHeaders(204, -1);
+            return;
+        }
+
         if (!"POST".equalsIgnoreCase(exchange.getRequestMethod())) {
             sendResponse(
                     exchange,
@@ -162,6 +170,10 @@ public class RegisterHandler implements HttpHandler {
         exchange.getResponseHeaders().set(
                 "Content-Type",
                 "application/json; charset=UTF-8"
+        );
+        exchange.getResponseHeaders().set(
+                "Access-Control-Allow-Origin",
+                "*"
         );
 
         exchange.sendResponseHeaders(

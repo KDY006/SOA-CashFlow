@@ -145,6 +145,10 @@ public class AuthService {
             userRepository.findByUsername(username);
 
     if (user == null) {
+        user = userRepository.findByEmail(username.toLowerCase());
+    }
+
+    if (user == null) {
         throw new IllegalArgumentException(
                 "Invalid username or password"
         );

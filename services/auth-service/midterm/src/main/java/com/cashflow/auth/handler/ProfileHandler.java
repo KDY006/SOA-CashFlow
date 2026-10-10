@@ -24,6 +24,14 @@ public class ProfileHandler implements HttpHandler {
     @Override
     public void handle(HttpExchange exchange) throws IOException {
 
+        if ("OPTIONS".equalsIgnoreCase(exchange.getRequestMethod())) {
+            exchange.getResponseHeaders().set("Access-Control-Allow-Origin", "*");
+            exchange.getResponseHeaders().set("Access-Control-Allow-Methods", "GET, OPTIONS");
+            exchange.getResponseHeaders().set("Access-Control-Allow-Headers", "Content-Type, Authorization, X-User-Id");
+            exchange.sendResponseHeaders(204, -1);
+            return;
+        }
+
         if (!"GET".equalsIgnoreCase(exchange.getRequestMethod())) {
             sendResponse(
                     exchange,
@@ -37,13 +45,39 @@ public class ProfileHandler implements HttpHandler {
         }
 
         try {
+            long userId = -1;
+
             String authorization =
                     exchange.getRequestHeaders()
                             .getFirst("Authorization");
 
-            if (authorization == null ||
-                    !authorization.startsWith("Bearer ")) {
+            if (authorization != null && authorization.startsWith("Bearer ")) {
+                String token = authorization.substring(7).trim();
 
+                if (!JwtUtil.validateToken(token)) {
+                    sendResponse(
+                            exchange,
+                            401,
+                            Map.of(
+                                    "success", false,
+                                    "message", "Invalid or expired token"
+                            )
+                    );
+                    return;
+                }
+
+                userId = JwtUtil.getUserId(token);
+            } else {
+                String xUserId = exchange.getRequestHeaders().getFirst("X-User-Id");
+                if (xUserId != null && !xUserId.isBlank()) {
+                    try {
+                        userId = Long.parseLong(xUserId.trim());
+                    } catch (NumberFormatException ignored) {
+                    }
+                }
+            }
+
+            if (userId <= 0) {
                 sendResponse(
                         exchange,
                         401,
@@ -54,25 +88,6 @@ public class ProfileHandler implements HttpHandler {
                 );
                 return;
             }
-
-            String token =
-                    authorization.substring(7).trim();
-
-            if (!JwtUtil.validateToken(token)) {
-
-                sendResponse(
-                        exchange,
-                        401,
-                        Map.of(
-                                "success", false,
-                                "message", "Invalid or expired token"
-                        )
-                );
-                return;
-            }
-
-            long userId =
-                    JwtUtil.getUserId(token);
 
             User user =
                     userRepository.findById(userId);
@@ -158,6 +173,10 @@ public class ProfileHandler implements HttpHandler {
         exchange.getResponseHeaders().set(
                 "Content-Type",
                 "application/json; charset=UTF-8"
+        );
+        exchange.getResponseHeaders().set(
+                "Access-Control-Allow-Origin",
+                "*"
         );
 
         exchange.sendResponseHeaders(

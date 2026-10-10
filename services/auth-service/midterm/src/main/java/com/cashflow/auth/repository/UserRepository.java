@@ -56,6 +56,25 @@ public class UserRepository {
         return null;
     }
 
+    public User findByEmail(String email) throws SQLException {
+        String sql = "SELECT * FROM users WHERE email = ?";
+
+        try (
+                Connection connection = DatabaseConfig.getConnection();
+                PreparedStatement statement = connection.prepareStatement(sql)
+        ) {
+            statement.setString(1, email);
+
+            try (ResultSet resultSet = statement.executeQuery()) {
+                if (resultSet.next()) {
+                    return mapUser(resultSet);
+                }
+            }
+        }
+
+        return null;
+    }
+
     public User findById(long id) throws SQLException {
         String sql = "SELECT * FROM users WHERE id = ?";
 
