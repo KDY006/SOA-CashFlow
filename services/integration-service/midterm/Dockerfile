@@ -1,15 +1,17 @@
-FROM golang:1.21-alpine AS builder
+FROM golang:1.22-alpine AS builder
 
 WORKDIR /app
-COPY go.mod ./
-# COPY go.sum ./
-# RUN go mod download || true
+COPY go.mod go.sum ./
+RUN go mod download
 
 COPY src/ ./src/
-# RUN go build -o main ./src || true
+RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o /app/integration-service ./src
 
-FROM alpine:3.18
+FROM alpine:3.19
+RUN apk add --no-cache tzdata ca-certificates
+ENV TZ=Asia/Ho_Chi_Minh
 WORKDIR /app
-# COPY --from=builder /app/main .
+COPY --from=builder /app/integration-service .
+
 EXPOSE 8085
-CMD ["echo", "Integration Service (Go) started on port 8085"]
+CMD ["./integration-service"]
