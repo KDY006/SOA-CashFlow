@@ -6,7 +6,7 @@ namespace AssetService.Midterm.Common;
 public static class Database
 {
     private static readonly string ConnectionString = Environment.GetEnvironmentVariable("DB_CONNECTION")
-        ?? $"Server={Environment.GetEnvironmentVariable("DB_HOST") ?? "localhost"};Port={Environment.GetEnvironmentVariable("DB_PORT") ?? "3306"};Database={Environment.GetEnvironmentVariable("DB_NAME") ?? "asset_db"};Uid={Environment.GetEnvironmentVariable("DB_USER") ?? "root"};Pwd={Environment.GetEnvironmentVariable("DB_PASSWORD") ?? "root_password"};AllowPublicKeyRetrieval=True;SslMode=None;";
+        ?? $"Server={Environment.GetEnvironmentVariable("DB_HOST") ?? "localhost"};Port={Environment.GetEnvironmentVariable("DB_PORT") ?? "3306"};Database={Environment.GetEnvironmentVariable("DB_NAME") ?? "asset_db"};Uid={Environment.GetEnvironmentVariable("DB_USER") ?? "root"};Pwd={Environment.GetEnvironmentVariable("DB_PASSWORD") ?? "root_password"};";
 
     public static MySqlConnection GetConnection()
     {
