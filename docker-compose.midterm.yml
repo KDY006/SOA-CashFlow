@@ -94,9 +94,13 @@ services:
     environment:
       - PROFILE=native
       - PORT=8083
-      - LISTEN_HOST=0.0.0.0
+      - LISTEN_HOST=+
       - DB_HOST=asset-db
-      - DB_CONNECTION=Server=asset-db;Port=3306;Database=asset_db;Uid=root;Pwd=root_password;
+      - DB_PORT=3306
+      - DB_NAME=asset_db
+      - DB_USER=root
+      - DB_PASSWORD=root_password
+      - DB_CONNECTION=Server=asset-db;Port=3306;Database=asset_db;Uid=root;Pwd=root_password;AllowPublicKeyRetrieval=True;SslMode=None;
     depends_on:
       - asset-db
     networks:
@@ -136,9 +140,18 @@ services:
       - "${INTEGRATION_SERVICE_PORT:-8085}:8085"
     environment:
       - PROFILE=native
+      - PORT=8085
       - DB_HOST=integration-db
+      - DB_PORT=3306
+      - DB_NAME=integration_db
+      - DB_USER=root
+      - DB_PASSWORD=root_password
+      - TRANSACTION_SERVICE_URL=http://transaction-service:8082
+      - NOTIFICATION_SERVICE_URL=http://notification-service:8086
     depends_on:
       - integration-db
+      - transaction-service
+      - notification-service
     networks:
       - midterm-network
 

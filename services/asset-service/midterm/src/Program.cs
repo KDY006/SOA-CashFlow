@@ -8,7 +8,8 @@ internal static class Program
     {
         var port = Environment.GetEnvironmentVariable("PORT") ?? "8083";
         // Sử dụng LISTEN_HOST="+" hoặc mặc định "+" để chấp nhận kết nối từ mọi giao diện mạng (kể cả Docker Bridge)
-        var host = Environment.GetEnvironmentVariable("LISTEN_HOST") ?? "localhost";
+        var host = Environment.GetEnvironmentVariable("LISTEN_HOST");
+        if (string.IsNullOrWhiteSpace(host) || host == "0.0.0.0") host = "+";
         
         using var listener = new HttpListener();
         listener.Prefixes.Add($"http://{host}:{port}/");

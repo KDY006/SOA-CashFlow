@@ -29,9 +29,12 @@ public static class Router
             object? result;
             int status = 200;
 
-            var userId = HttpHelper.ParseUserId(context.Request.QueryString["user_id"]);
+            var headerUser = context.Request.Headers["x-user-id"];
+            var userId = HttpHelper.ParseUserId(!string.IsNullOrWhiteSpace(headerUser) ? headerUser : context.Request.QueryString["user_id"]);
 
-            if (path == "/api/assets/net-worth" && method == "GET") 
+            if (path == "" || path == "/health")
+                result = new { service = "asset-service", status = "UP", version = "1.0.0-midterm" };
+            else if (path == "/api/assets/net-worth" && method == "GET") 
                 result = AnalyticsHandler.GetNetWorth(userId);
             else if (path == "/api/assets/depreciation" && method == "POST") 
                 result = AssetHandler.CalculateDepreciation(await HttpHelper.ReadBodyAsync<DepreciationInput>(context));
