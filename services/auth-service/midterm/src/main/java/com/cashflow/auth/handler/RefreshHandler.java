@@ -31,6 +31,14 @@ public class RefreshHandler implements HttpHandler {
     public void handle(HttpExchange exchange)
             throws IOException {
 
+        if ("OPTIONS".equalsIgnoreCase(exchange.getRequestMethod())) {
+            exchange.getResponseHeaders().set("Access-Control-Allow-Origin", "*");
+            exchange.getResponseHeaders().set("Access-Control-Allow-Methods", "POST, OPTIONS");
+            exchange.getResponseHeaders().set("Access-Control-Allow-Headers", "Content-Type, Authorization");
+            exchange.sendResponseHeaders(204, -1);
+            return;
+        }
+
         if (!"POST".equalsIgnoreCase(
                 exchange.getRequestMethod()
         )) {
@@ -46,14 +54,32 @@ public class RefreshHandler implements HttpHandler {
         }
 
         try {
-            Map<?, ?> request =
-                    JsonUtil.getObjectMapper().readValue(
-                            exchange.getRequestBody(),
-                            Map.class
-                    );
+            Map<?, ?> request;
+            try {
+                Object body = JsonUtil.getObjectMapper().readValue(
+                        exchange.getRequestBody(),
+                        Object.class
+                );
+                if (!(body instanceof Map)) {
+                    throw new IllegalStateException();
+                }
+                request = (Map<?, ?>) body;
+            } catch (Exception e) {
+                sendResponse(
+                        exchange,
+                        400,
+                        Map.of(
+                                "success", false,
+                                "message", "Request body must be a valid JSON object"
+                        )
+                );
+                return;
+            }
 
-            Object value =
-                    request.get("refreshToken");
+            Object value = request.get("refreshToken");
+            if (value == null) {
+                value = request.get("refresh_token");
+            }
 
             if (value == null ||
                     value.toString().isBlank()) {
@@ -178,6 +204,10 @@ public class RefreshHandler implements HttpHandler {
         exchange.getResponseHeaders().set(
                 "Content-Type",
                 "application/json; charset=UTF-8"
+        );
+        exchange.getResponseHeaders().set(
+                "Access-Control-Allow-Origin",
+                "*"
         );
 
         exchange.sendResponseHeaders(

@@ -72,3 +72,8 @@ logs/
 
 # Docker
 .dockerignore
+
+# Test Reports / Newman
+newman/
+newman-report.html
+*.html

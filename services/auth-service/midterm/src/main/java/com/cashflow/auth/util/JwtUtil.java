@@ -16,7 +16,11 @@ private static final String SECRET = loadSecret();
         String secret = System.getenv("JWT_SECRET");
 
         if (secret == null || secret.isBlank()) {
-            return "cashflow-auth-local-development-secret-key-2026";
+            secret = System.getenv("AUTH_JWT_SECRET");
+        }
+
+        if (secret == null || secret.isBlank()) {
+            return "cashflow-auth-midterm-development-secret-key";
         }
 
         if (secret.length() < 32) {

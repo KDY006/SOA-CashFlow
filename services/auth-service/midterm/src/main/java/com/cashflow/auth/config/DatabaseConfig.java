@@ -6,20 +6,28 @@ import java.sql.SQLException;
 
 public class DatabaseConfig {
 
+    private static String getEnv(String primary, String fallback, String defaultValue) {
+        String val = System.getenv(primary);
+        if (val != null && !val.isBlank()) return val;
+        val = System.getenv(fallback);
+        if (val != null && !val.isBlank()) return val;
+        return defaultValue;
+    }
+
     private static final String DB_HOST =
-            System.getenv().getOrDefault("DB_HOST", "localhost");
+            getEnv("DB_HOST", "AUTH_DB_HOST", "localhost");
 
     private static final String DB_PORT =
-            System.getenv().getOrDefault("DB_PORT", "3307");
+            getEnv("DB_PORT", "AUTH_DB_PORT", "3307");
 
     private static final String DB_NAME =
-            System.getenv().getOrDefault("DB_NAME", "auth_db");
+            getEnv("DB_NAME", "AUTH_DB_NAME", "auth_db");
 
     private static final String DB_USER =
-            System.getenv().getOrDefault("DB_USER", "root");
+            getEnv("DB_USER", "AUTH_DB_USER", "root");
 
     private static final String DB_PASSWORD =
-            System.getenv().getOrDefault("DB_PASSWORD", "root_password");
+            getEnv("DB_PASSWORD", "AUTH_DB_PASSWORD", "root_password");
 
     private static final String DB_URL =
             "jdbc:mysql://" + DB_HOST + ":" + DB_PORT + "/" + DB_NAME

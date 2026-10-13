@@ -39,7 +39,7 @@
     2. `Transaction Service` (PHP 8.2 - Port 8082)
     3. `Asset Service` (C# .NET - Port 8083)
     4. `Analytics Service` (Python 3.11 - Port 8084)
-    5. `Integration Service` (Go 1.21 - Port 8085)
+    5. `Integration Service` (Go 1.22 - Port 8085)
     6. `Notification Service` (Node.js 20 - Port 8086)
   - **Cơ sở dữ liệu đa dạng (Polyglot Persistence):** 4 MySQL 8.0 riêng lẻ + 1 MongoDB 6.0 + 1 Redis 7 Pub/Sub.
 * *[Hình minh họa: Sơ đồ luồng kết nối từ Client qua Gateway tới 6 Services và cụm Databases]*
@@ -108,11 +108,16 @@
 ---
 
 ## SLIDE 10: INTEGRATION SERVICE - THÀNH VIÊN 5 (GO NATIVE)
-* **Công nghệ:** Go 1.21 Native (`net/http`), MySQL `integration_db`.
-* **Điểm nổi bật:**
-  - Microservice siêu nhẹ phục vụ tỷ giá ngoại tệ (USD, EUR, JPY) quy đổi sang VND.
-  - Sẵn sàng endpoint Webhook đón nhận biến động số dư từ ngân hàng đối tác.
-  - Tốc độ xử lý mili-giây và tiêu tốn cực ít tài nguyên RAM.
+* **Công nghệ:** Go 1.22 thuần (`net/http`, `database/sql` + driver `go-sql-driver/mysql`), MySQL `integration_db`.
+* **Vai trò:** nhận biến động số dư từ ngân hàng / ví (giả lập) qua webhook, cập nhật số dư tài khoản liên kết rồi đẩy sang Transaction Service. Ngoài ra cung cấp tỷ giá ngoại tệ.
+* **Bài toán 1 - Race condition (nhiều giao dịch cùng lúc trên 1 tài khoản):**
+  - Mutex theo từng tài khoản trong process + `SELECT ... FOR UPDATE` trong transaction MySQL.
+  - Tự chạy lại khi gặp deadlock (lỗi 1213/1205), tiền lưu dạng số nguyên để tránh sai số float.
+* **Bài toán 2 - Idempotency (ngân hàng gửi lại cùng 1 giao dịch):**
+  - Khóa theo `Idempotency-Key` hoặc `provider:external_ref`, gửi lại thì trả bản ghi cũ, không cộng tiền lần 2.
+  - Chốt chặn cuối bằng 2 UNIQUE KEY dưới DB.
+* **Đồng bộ liên service:** worker pool (goroutine) đẩy sang PHP ở background, giành bản ghi bằng `UPDATE ... WHERE status IN (...)` nên không gửi trùng; lỗi thì sweeper tự thử lại tối đa 5 lần. Có cảnh báo ngân sách thì chuyển sang Notification Service.
+* **Demo:** API `POST /api/integrations/simulate` bắn 200 giao dịch + 50% request trùng với 50 goroutine: chế độ `safe` lệch 0 đồng, chế độ `unsafe` (tắt khóa) số dư bị sai.
 
 ---
 

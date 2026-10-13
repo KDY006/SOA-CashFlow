@@ -6,6 +6,7 @@ import com.cashflow.auth.service.AuthService;
 import com.cashflow.auth.util.JsonUtil;
 import com.cashflow.auth.util.JwtUtil;
 import com.cashflow.auth.util.RefreshTokenUtil;
+import com.fasterxml.jackson.core.JsonProcessingException;
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpHandler;
 
@@ -34,6 +35,14 @@ public class LoginHandler implements HttpHandler {
     @Override
     public void handle(HttpExchange exchange) throws IOException {
 
+        if ("OPTIONS".equalsIgnoreCase(exchange.getRequestMethod())) {
+            exchange.getResponseHeaders().set("Access-Control-Allow-Origin", "*");
+            exchange.getResponseHeaders().set("Access-Control-Allow-Methods", "POST, OPTIONS");
+            exchange.getResponseHeaders().set("Access-Control-Allow-Headers", "Content-Type, Authorization");
+            exchange.sendResponseHeaders(204, -1);
+            return;
+        }
+
         if (!"POST".equalsIgnoreCase(exchange.getRequestMethod())) {
             sendResponse(
                     exchange,
@@ -47,11 +56,24 @@ public class LoginHandler implements HttpHandler {
         }
 
         try {
-            Map<?, ?> request =
-                    JsonUtil.getObjectMapper().readValue(
-                            exchange.getRequestBody(),
-                            Map.class
-                    );
+            Map<?, ?> request;
+            try {
+                Object body = JsonUtil.getObjectMapper().readValue(
+                        exchange.getRequestBody(),
+                        Object.class
+                );
+                if (!(body instanceof Map)) {
+                    throw new IllegalStateException();
+                }
+                request = (Map<?, ?>) body;
+            } catch (JsonProcessingException | IllegalStateException e) {
+                // body rỗng / sai json thì là lỗi phía client, không phải 500
+                Map<String, Object> error = new LinkedHashMap<>();
+                error.put("success", false);
+                error.put("message", "Request body must be a valid JSON object");
+                sendResponse(exchange, 400, error);
+                return;
+            }
 
             String username =
                     getString(request, "username");
@@ -230,6 +252,10 @@ public class LoginHandler implements HttpHandler {
         exchange.getResponseHeaders().set(
                 "Content-Type",
                 "application/json; charset=UTF-8"
+        );
+        exchange.getResponseHeaders().set(
+                "Access-Control-Allow-Origin",
+                "*"
         );
 
         exchange.sendResponseHeaders(

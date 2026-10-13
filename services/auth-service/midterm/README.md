@@ -79,6 +79,15 @@ Content-Type: application/json
 }
 ```
 
+### Lỗi thường gặp
+
+| Status | Khi nào |
+| ------ | ------- |
+| 400 | body rỗng / sai JSON, thiếu field, username không hợp lệ (3-50 ký tự: chữ, số, `.`, `_`), email sai định dạng, password < 6 ký tự, số điện thoại sai (9-15 số) |
+| 409 | username hoặc email đã tồn tại |
+
+`fullName` / `phoneNumber` nhận cả dạng `full_name` / `phone_number`. Email được lưu chữ thường.
+
 ## Login
 
 ### Request
