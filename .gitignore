@@ -35,6 +35,7 @@ target/
 
 # PHP / Composer (transaction-service)
 vendor/
+!frontend/assets/vendor/
 composer.phar
 .phpunit.result.cache
 
@@ -77,3 +78,7 @@ logs/
 newman/
 newman-report.html
 *.html
+
+# portable toolchains for local dev
+.tools/
+cookie.txt
