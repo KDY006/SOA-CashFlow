@@ -3,8 +3,10 @@ from __future__ import annotations
 
 import json
 import os
-import sqlite3
+import pymysql
+from pymysql.cursors import DictCursor
 import statistics
+import time
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -20,7 +22,11 @@ PORT = int(os.getenv("PORT", "8084"))
 TRANSACTION_SERVICE_URL = os.getenv("TRANSACTION_SERVICE_URL", "http://transaction-service:8082")
 SERVICE_DIR = Path(__file__).resolve().parents[2]
 SCHEMA_PATH = Path(os.getenv("ANALYTICS_DB_SCHEMA", SERVICE_DIR / "db" / "init-analytics-db.sql"))
-DATABASE_PATH = Path(os.getenv("ANALYTICS_DB_PATH", SERVICE_DIR / "db" / "analytics.sqlite3"))
+DB_HOST = os.getenv("ANALYTICS_DB_HOST", os.getenv("DB_HOST", "analytics-db"))
+DB_PORT = int(os.getenv("ANALYTICS_DB_PORT", os.getenv("DB_PORT", "3306")))
+DB_NAME = os.getenv("ANALYTICS_DB_NAME", os.getenv("DB_NAME", "analytics_db"))
+DB_USER = os.getenv("ANALYTICS_DB_USER", os.getenv("DB_USER", "root"))
+DB_PASSWORD = os.getenv("ANALYTICS_DB_PASSWORD", os.getenv("DB_PASSWORD", "root_password"))
 
 
 def _date(value: Any) -> date | None:
@@ -148,12 +154,32 @@ def anomalies(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return flagged
 
 
-def _connect_database() -> sqlite3.Connection:
-    DATABASE_PATH.parent.mkdir(parents=True, exist_ok=True)
-    connection = sqlite3.connect(DATABASE_PATH, timeout=10)
-    connection.row_factory = sqlite3.Row
-    connection.execute("PRAGMA busy_timeout = 10000")
-    return connection
+class _DatabaseConnection:
+    """Small adapter to keep query code readable while using MySQL."""
+    def __init__(self, raw):
+        self.raw = raw
+
+    def execute(self, sql, params=()):
+        cursor = self.raw.cursor()
+        cursor.execute(sql, params)
+        return cursor
+
+    def executescript(self, script):
+        for statement in script.split(";"):
+            if statement.strip():
+                self.execute(statement)
+
+    def commit(self): self.raw.commit()
+    def rollback(self): self.raw.rollback()
+    def close(self): self.raw.close()
+
+
+def _connect_database() -> _DatabaseConnection:
+    return _DatabaseConnection(pymysql.connect(
+        host=DB_HOST, port=DB_PORT, database=DB_NAME, user=DB_USER,
+        password=DB_PASSWORD, charset="utf8mb4", cursorclass=DictCursor,
+        connect_timeout=10, autocommit=False,
+    ))
 
 
 @contextmanager
@@ -172,8 +198,18 @@ def _database():
 def _init_database() -> None:
     if not SCHEMA_PATH.is_file():
         raise RuntimeError(f"Không tìm thấy schema SQL: {SCHEMA_PATH}")
-    with _database() as connection:
-        connection.executescript(SCHEMA_PATH.read_text(encoding="utf-8"))
+    last_error = None
+    for attempt in range(30):
+        try:
+            with _database() as connection:
+                connection.executescript(SCHEMA_PATH.read_text(encoding="utf-8"))
+            return
+        except pymysql.MySQLError as exc:
+            last_error = exc
+            if attempt == 29:
+                break
+            time.sleep(2)
+    raise RuntimeError(f"Không kết nối được MySQL {DB_HOST}:{DB_PORT}/{DB_NAME}: {last_error}")
 
 
 def _save_report(user_id: int, report: dict[str, Any]) -> None:
@@ -181,26 +217,24 @@ def _save_report(user_id: int, report: dict[str, Any]) -> None:
         with _database() as connection:
             connection.execute(
                 """INSERT INTO monthly_reports (user_id, year, month, report_json, generated_at)
-                   VALUES (?, ?, ?, ?, ?)
-                   ON CONFLICT(user_id, year, month) DO UPDATE SET
-                     report_json = excluded.report_json,
-                     generated_at = excluded.generated_at,
-                     updated_at = CURRENT_TIMESTAMP""",
+                   VALUES (%s, %s, %s, %s, %s)
+                   ON DUPLICATE KEY UPDATE report_json = VALUES(report_json),
+                     generated_at = VALUES(generated_at), updated_at = CURRENT_TIMESTAMP""",
                 (user_id, report["year"], report["month"],
                  json.dumps(report, ensure_ascii=False), report["generated_at"]),
             )
-    except sqlite3.Error as exc:
-        raise RuntimeError(f"Không lưu được báo cáo vào SQLite: {exc}")
+    except pymysql.MySQLError as exc:
+        raise RuntimeError(f"Không lưu được báo cáo vào MySQL: {exc}")
 
 
 def _load_reports(user_id: int, year: int | None, month: int | None) -> list[dict[str, Any]]:
-    clauses = ["user_id = ?"]
+    clauses = ["user_id = %s"]
     params: list[int] = [user_id]
     if year is not None:
-        clauses.append("year = ?")
+        clauses.append("year = %s")
         params.append(year)
     if month is not None:
-        clauses.append("month = ?")
+        clauses.append("month = %s")
         params.append(month)
     try:
         with _database() as connection:
@@ -210,8 +244,8 @@ def _load_reports(user_id: int, year: int | None, month: int | None) -> list[dic
                 params,
             ).fetchall()
         return [json.loads(record["report_json"]) for record in records]
-    except (sqlite3.Error, json.JSONDecodeError) as exc:
-        raise RuntimeError(f"Không đọc được báo cáo từ SQLite: {exc}")
+    except (pymysql.MySQLError, json.JSONDecodeError) as exc:
+        raise RuntimeError(f"Không đọc được báo cáo từ MySQL: {exc}")
 
 
 class AnalyticsHandler(BaseHTTPRequestHandler):
@@ -302,9 +336,9 @@ class AnalyticsHandler(BaseHTTPRequestHandler):
             report.update({"user_id": user_id, "year": end.year if end else date.today().year,
                            "month": end.month if end else date.today().month,
                            "category_breakdown": category_breakdown(rows),
-                           "anomalies": anomalies(rows), "generated_at": datetime.utcnow().isoformat(timespec="seconds") + "Z"})
+                           "anomalies": anomalies(rows), "generated_at": datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")})
             _save_report(user_id, report)
-            return self._send(201, {"data": report, "meta": {"stored": True, "database": "sqlite"}})
+            return self._send(201, {"data": report, "meta": {"stored": True, "database": "mysql"}})
         except (ValueError, json.JSONDecodeError) as exc:
             return self._send(400, {"error": "VALIDATION_ERROR", "message": str(exc)})
         except RuntimeError as exc:
