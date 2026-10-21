@@ -6,13 +6,26 @@ namespace AssetService.Midterm.Common;
 public static class Database
 {
     private static readonly string ConnectionString = Environment.GetEnvironmentVariable("DB_CONNECTION")
-        ?? $"Server={Environment.GetEnvironmentVariable("DB_HOST") ?? "localhost"};Port=3306;Database=asset_db;Uid=root;Pwd={Environment.GetEnvironmentVariable("DB_PASSWORD") ?? "root_password"};";
+        ?? $"Server={Environment.GetEnvironmentVariable("DB_HOST") ?? "localhost"};Port={Environment.GetEnvironmentVariable("DB_PORT") ?? "3306"};Database={Environment.GetEnvironmentVariable("DB_NAME") ?? "asset_db"};Uid={Environment.GetEnvironmentVariable("DB_USER") ?? "root"};Pwd={Environment.GetEnvironmentVariable("DB_PASSWORD") ?? "root_password"};";
 
     public static MySqlConnection GetConnection()
     {
-        var conn = new MySqlConnection(ConnectionString);
-        conn.Open();
-        return conn;
+        for (var attempt = 1; attempt <= 10; attempt++)
+        {
+            try
+            {
+                var conn = new MySqlConnection(ConnectionString);
+                conn.Open();
+                return conn;
+            }
+            catch (MySqlException) when (attempt < 10)
+            {
+                Thread.Sleep(1000);
+            }
+        }
+        var finalConn = new MySqlConnection(ConnectionString);
+        finalConn.Open();
+        return finalConn;
     }
 
     public static List<Dictionary<string, object?>> Query(string sql, long userId)

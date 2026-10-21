@@ -32,8 +32,10 @@ public static class Router
             var req = context.Request;
             var userId = HttpHelper.ResolveUserId(req);
 
-            // --- ANALYTICS & THUẬT TOÁN ---
-            if (path == "/api/assets/net-worth" && method == "GET") 
+            // --- HEALTH & ANALYTICS & THUẬT TOÁN ---
+            if (path == "" || path == "/health")
+                result = new { service = "asset-service", status = "UP", version = "1.0.0-midterm" };
+            else if (path == "/api/assets/net-worth" && method == "GET") 
                 result = AnalyticsHandler.GetNetWorth(userId);
             else if (path == "/api/assets/depreciation" && method == "POST") 
                 result = AssetHandler.CalculateDepreciation(await HttpHelper.ReadBodyAsync<DepreciationInput>(context));

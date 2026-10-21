@@ -7,8 +7,9 @@ internal static class Program
     private static async Task Main()
     {
         var port = Environment.GetEnvironmentVariable("PORT") ?? "8083";
-        // Trong Docker Container, LISTEN_HOST sẽ là "+" để lắng nghe từ Gateway
-        var host = Environment.GetEnvironmentVariable("LISTEN_HOST") ?? "+";
+        // Sử dụng LISTEN_HOST="+" hoặc mặc định "+" để chấp nhận kết nối từ mọi giao diện mạng (kể cả Docker Bridge)
+        var host = Environment.GetEnvironmentVariable("LISTEN_HOST");
+        if (string.IsNullOrWhiteSpace(host) || host == "0.0.0.0") host = "+";
         
         using var listener = new HttpListener();
         listener.Prefixes.Add($"http://{host}:{port}/");

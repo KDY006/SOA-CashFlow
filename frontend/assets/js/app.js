@@ -105,6 +105,15 @@
 
   function autoHideAlerts() {
     document.querySelectorAll('[data-autohide]').forEach((el) => {
+      if (!el.dataset.toasted) {
+        el.dataset.toasted = '1';
+        const txt = (el.querySelector('span')?.textContent || '').trim();
+        if (txt) {
+          const isErr = el.classList.contains('alert-danger');
+          const isWarn = el.classList.contains('alert-warning');
+          toast(isErr ? 'Thao tác thất bại' : (isWarn ? 'Cảnh báo' : 'Thành công'), txt, isErr ? 'danger' : (isWarn ? 'warning' : 'success'), 5500);
+        }
+      }
       setTimeout(() => { el.style.transition = 'opacity .4s'; el.style.opacity = '0'; setTimeout(() => el.remove(), 400); }, 6000);
     });
   }
