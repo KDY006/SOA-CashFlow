@@ -1,0 +1,1524 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "Asset Service (C# .NET)",
+    "version": "1.0.0-midterm",
+    "description": "Dịch vụ quản lý tài sản, khoản vay và danh mục đầu tư của SOA CashFlow. Viết bằng C# .NET (HttpListener thuần + MySQL asset_db), chạy nội bộ trên cổng 8083 và được truy cập qua API Gateway (:8080) với các prefix /api/assets, /api/loans, /api/investments.\n\nLưu ý: service xác định người dùng qua query `user_id` (mặc định = 1 nếu bỏ trống); header X-User-Id do Gateway tự inject từ JWT. Lỗi từ service có dạng `{\"error\": \"...\"}`."
+  },
+  "servers": [
+    {
+      "url": "/",
+      "description": "Qua API Gateway"
+    }
+  ],
+  "security": [
+    {
+      "bearerAuth": []
+    }
+  ],
+  "tags": [
+    {
+      "name": "Assets",
+      "description": "Quản lý tài sản & giá trị ròng"
+    },
+    {
+      "name": "Loans",
+      "description": "Quản lý khoản vay & tính trả góp"
+    },
+    {
+      "name": "Investments",
+      "description": "Danh mục đầu tư"
+    }
+  ],
+  "paths": {
+    "/api/assets": {
+      "get": {
+        "tags": [
+          "Assets"
+        ],
+        "summary": "Lấy danh sách tài sản của người dùng",
+        "operationId": "listAssets",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/UserIdQuery"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Danh sách tài sản (sắp xếp theo id)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/AssetListItem"
+                  }
+                },
+                "example": [
+                  {
+                    "id": 1,
+                    "user_id": 1,
+                    "asset_name": "Tài khoản Vietcombank",
+                    "asset_type": "BANK_ACCOUNT",
+                    "purchase_price": 0,
+                    "current_value": 50000000,
+                    "salvage_value": 0,
+                    "useful_life_years": 0,
+                    "purchase_date": null,
+                    "currency": "VND",
+                    "note": "Tài khoản lương"
+                  },
+                  {
+                    "id": 2,
+                    "user_id": 1,
+                    "asset_name": "Laptop Dell XPS",
+                    "asset_type": "EQUIPMENT",
+                    "purchase_price": 35000000,
+                    "current_value": 28000000,
+                    "salvage_value": 5000000,
+                    "useful_life_years": 5,
+                    "purchase_date": "2024-03-15T00:00:00",
+                    "currency": "VND",
+                    "note": null
+                  }
+                ]
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Assets"
+        ],
+        "summary": "Tạo tài sản mới",
+        "operationId": "createAsset",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AssetInput"
+              },
+              "example": {
+                "user_id": 1,
+                "asset_name": "Laptop Dell XPS",
+                "asset_type": "EQUIPMENT",
+                "purchase_price": 35000000,
+                "current_value": 28000000,
+                "salvage_value": 5000000,
+                "useful_life_years": 5,
+                "purchase_date": "2024-03-15",
+                "currency": "VND",
+                "note": "Máy làm việc"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Tài sản đã được tạo (trả về bản ghi đầy đủ)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Asset"
+                },
+                "example": {
+                  "id": 3,
+                  "user_id": 1,
+                  "asset_name": "Laptop Dell XPS",
+                  "asset_type": "EQUIPMENT",
+                  "purchase_price": 35000000,
+                  "current_value": 28000000,
+                  "salvage_value": 5000000,
+                  "useful_life_years": 5,
+                  "purchase_date": "2024-03-15T00:00:00",
+                  "currency": "VND",
+                  "note": "Máy làm việc",
+                  "created_at": "2026-10-20T10:00:00",
+                  "updated_at": "2026-10-20T10:00:00"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Dữ liệu không hợp lệ",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "examples": {
+                  "invalid": {
+                    "value": {
+                      "error": "Invalid asset values"
+                    }
+                  },
+                  "badJson": {
+                    "value": {
+                      "error": "Invalid JSON request body"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        }
+      }
+    },
+    "/api/assets/net-worth": {
+      "get": {
+        "tags": [
+          "Assets"
+        ],
+        "summary": "Tính giá trị tài sản ròng (tổng tài sản - dư nợ vay ACTIVE)",
+        "operationId": "getNetWorth",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/UserIdQuery"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Giá trị ròng",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "user_id": {
+                      "type": "integer",
+                      "format": "int64"
+                    },
+                    "total_net_worth": {
+                      "type": "number"
+                    },
+                    "currency": {
+                      "type": "string",
+                      "example": "VND"
+                    }
+                  }
+                },
+                "example": {
+                  "user_id": 1,
+                  "total_net_worth": -122000000,
+                  "currency": "VND"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        }
+      }
+    },
+    "/api/assets/depreciation": {
+      "post": {
+        "tags": [
+          "Assets"
+        ],
+        "summary": "Tính khấu hao đường thẳng của tài sản",
+        "operationId": "calculateDepreciation",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "purchase_price",
+                  "salvage_value",
+                  "useful_life_years"
+                ],
+                "properties": {
+                  "purchase_price": {
+                    "type": "number",
+                    "minimum": 0
+                  },
+                  "salvage_value": {
+                    "type": "number",
+                    "minimum": 0,
+                    "description": "Phải ≤ purchase_price"
+                  },
+                  "useful_life_years": {
+                    "type": "integer",
+                    "minimum": 1
+                  }
+                }
+              },
+              "example": {
+                "purchase_price": 35000000,
+                "salvage_value": 5000000,
+                "useful_life_years": 5
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Kết quả khấu hao năm/tháng",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "purchase_price": {
+                      "type": "number"
+                    },
+                    "salvage_value": {
+                      "type": "number"
+                    },
+                    "useful_life_years": {
+                      "type": "integer"
+                    },
+                    "annual_depreciation": {
+                      "type": "number"
+                    },
+                    "monthly_depreciation": {
+                      "type": "number"
+                    }
+                  }
+                },
+                "example": {
+                  "purchase_price": 35000000,
+                  "salvage_value": 5000000,
+                  "useful_life_years": 5,
+                  "annual_depreciation": 6000000,
+                  "monthly_depreciation": 500000
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Tham số không hợp lệ",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "error": "Require purchase_price >= salvage_value >= 0 and useful_life_years > 0"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        }
+      }
+    },
+    "/api/assets/{id}": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "description": "ID tài sản (số nguyên dương)",
+          "schema": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1
+          },
+          "example": 2
+        },
+        {
+          "$ref": "#/components/parameters/UserIdQuery"
+        }
+      ],
+      "get": {
+        "tags": [
+          "Assets"
+        ],
+        "summary": "Lấy chi tiết một tài sản",
+        "operationId": "getAsset",
+        "responses": {
+          "200": {
+            "description": "Chi tiết tài sản",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Asset"
+                },
+                "example": {
+                  "id": 2,
+                  "user_id": 1,
+                  "asset_name": "Laptop Dell XPS",
+                  "asset_type": "EQUIPMENT",
+                  "purchase_price": 35000000,
+                  "current_value": 28000000,
+                  "salvage_value": 5000000,
+                  "useful_life_years": 5,
+                  "purchase_date": "2024-03-15T00:00:00",
+                  "currency": "VND",
+                  "note": null,
+                  "created_at": "2026-10-01T08:00:00",
+                  "updated_at": "2026-10-01T08:00:00"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/RecordNotFound"
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "Assets"
+        ],
+        "summary": "Cập nhật tài sản (USER chỉ sửa được tài sản của mình, ADMIN sửa được tất cả)",
+        "operationId": "updateAsset",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AssetInput"
+              },
+              "example": {
+                "user_id": 1,
+                "asset_name": "Laptop Dell XPS",
+                "asset_type": "EQUIPMENT",
+                "purchase_price": 35000000,
+                "current_value": 25000000,
+                "salvage_value": 5000000,
+                "useful_life_years": 5,
+                "purchase_date": "2024-03-15",
+                "currency": "VND",
+                "note": "Đánh giá lại giá trị"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Tài sản sau khi cập nhật",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Asset"
+                },
+                "example": {
+                  "id": 2,
+                  "user_id": 1,
+                  "asset_name": "Laptop Dell XPS",
+                  "asset_type": "EQUIPMENT",
+                  "purchase_price": 35000000,
+                  "current_value": 25000000,
+                  "salvage_value": 5000000,
+                  "useful_life_years": 5,
+                  "purchase_date": "2024-03-15T00:00:00",
+                  "currency": "VND",
+                  "note": "Đánh giá lại giá trị",
+                  "created_at": "2026-10-01T08:00:00",
+                  "updated_at": "2026-10-20T10:05:00"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Dữ liệu không hợp lệ",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "examples": {
+                  "invalid": {
+                    "value": {
+                      "error": "Invalid asset values"
+                    }
+                  },
+                  "userMismatch": {
+                    "value": {
+                      "error": "user_id must match the requested user"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/RecordNotFound"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Assets"
+        ],
+        "summary": "Xoá tài sản theo ID",
+        "operationId": "deleteAsset",
+        "responses": {
+          "200": {
+            "description": "Xoá tài sản thành công",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeleteSuccess"
+                },
+                "example": {
+                  "message": "Asset deleted successfully",
+                  "id": 2
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/RecordNotFound"
+          }
+        }
+      }
+    },
+    "/api/loans": {
+      "get": {
+        "tags": [
+          "Loans"
+        ],
+        "summary": "Lấy danh sách khoản vay của người dùng",
+        "operationId": "listLoans",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/UserIdQuery"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Danh sách khoản vay",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/LoanListItem"
+                  }
+                },
+                "example": [
+                  {
+                    "id": 1,
+                    "user_id": 1,
+                    "loan_title": "Vay mua xe máy",
+                    "principal_amount": 30000000,
+                    "interest_rate": 9.5,
+                    "term_months": 12,
+                    "start_date": "2026-01-10T00:00:00",
+                    "status": "ACTIVE"
+                  }
+                ]
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Loans"
+        ],
+        "summary": "Tạo khoản vay mới (trạng thái mặc định ACTIVE)",
+        "operationId": "createLoan",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LoanInput"
+              },
+              "example": {
+                "user_id": 1,
+                "loan_title": "Vay mua xe máy",
+                "principal_amount": 30000000,
+                "interest_rate": 9.5,
+                "term_months": 12,
+                "start_date": "2026-01-10"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Khoản vay đã tạo",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Loan"
+                },
+                "example": {
+                  "id": 2,
+                  "user_id": 1,
+                  "loan_title": "Vay mua xe máy",
+                  "principal_amount": 30000000,
+                  "interest_rate": 9.5,
+                  "term_months": 12,
+                  "start_date": "2026-01-10T00:00:00",
+                  "status": "ACTIVE",
+                  "created_at": "2026-10-20T10:00:00",
+                  "updated_at": "2026-10-20T10:00:00"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Dữ liệu không hợp lệ",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "error": "Invalid loan values"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        }
+      }
+    },
+    "/api/loans/calculate": {
+      "post": {
+        "tags": [
+          "Loans"
+        ],
+        "summary": "Tính số tiền trả góp hàng tháng (dư nợ giảm dần, annuity)",
+        "operationId": "calculateLoan",
+        "description": "Trường đầu vào lãi suất là `interest_rate` (%/năm); response trả về dưới tên `annual_interest_rate`.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "principal_amount",
+                  "interest_rate",
+                  "term_months"
+                ],
+                "properties": {
+                  "principal_amount": {
+                    "type": "number",
+                    "exclusiveMinimum": true,
+                    "minimum": 0
+                  },
+                  "interest_rate": {
+                    "type": "number",
+                    "minimum": 0,
+                    "maximum": 999.99,
+                    "description": "Lãi suất %/năm"
+                  },
+                  "term_months": {
+                    "type": "integer",
+                    "minimum": 1
+                  }
+                }
+              },
+              "example": {
+                "principal_amount": 30000000,
+                "interest_rate": 12,
+                "term_months": 12
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Kết quả tính trả góp",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "principal_amount": {
+                      "type": "number"
+                    },
+                    "annual_interest_rate": {
+                      "type": "number"
+                    },
+                    "term_months": {
+                      "type": "integer"
+                    },
+                    "monthly_payment": {
+                      "type": "number"
+                    }
+                  }
+                },
+                "example": {
+                  "principal_amount": 30000000,
+                  "annual_interest_rate": 12,
+                  "term_months": 12,
+                  "monthly_payment": 2665463.66
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Tham số không hợp lệ",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "error": "Require principal_amount > 0, annual_interest_rate between 0 and 999.99, and term_months > 0"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        }
+      }
+    },
+    "/api/loans/{id}": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "description": "ID khoản vay (số nguyên dương)",
+          "schema": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1
+          },
+          "example": 1
+        },
+        {
+          "$ref": "#/components/parameters/UserIdQuery"
+        }
+      ],
+      "get": {
+        "tags": [
+          "Loans"
+        ],
+        "summary": "Lấy chi tiết một khoản vay",
+        "operationId": "getLoan",
+        "responses": {
+          "200": {
+            "description": "Chi tiết khoản vay",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Loan"
+                },
+                "example": {
+                  "id": 1,
+                  "user_id": 1,
+                  "loan_title": "Vay mua xe máy",
+                  "principal_amount": 30000000,
+                  "interest_rate": 9.5,
+                  "term_months": 12,
+                  "start_date": "2026-01-10T00:00:00",
+                  "status": "ACTIVE",
+                  "created_at": "2026-01-10T09:00:00",
+                  "updated_at": "2026-01-10T09:00:00"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/RecordNotFound"
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "Loans"
+        ],
+        "summary": "Cập nhật thông tin khoản vay",
+        "operationId": "updateLoan",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LoanInput"
+              },
+              "example": {
+                "user_id": 1,
+                "loan_title": "Vay mua xe máy (đã thương lượng lãi suất)",
+                "principal_amount": 25000000,
+                "interest_rate": 8.5,
+                "term_months": 12,
+                "start_date": "2026-01-10"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Khoản vay sau khi cập nhật",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Loan"
+                },
+                "example": {
+                  "id": 1,
+                  "user_id": 1,
+                  "loan_title": "Vay mua xe máy (đã thương lượng lãi suất)",
+                  "principal_amount": 25000000,
+                  "interest_rate": 8.5,
+                  "term_months": 12,
+                  "start_date": "2026-01-10T00:00:00",
+                  "status": "ACTIVE",
+                  "created_at": "2026-01-10T09:00:00",
+                  "updated_at": "2026-10-21T10:00:00"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/RecordNotFound"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Loans"
+        ],
+        "summary": "Xoá khoản vay theo ID",
+        "operationId": "deleteLoan",
+        "responses": {
+          "200": {
+            "description": "Xoá khoản vay thành công",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeleteSuccess"
+                },
+                "example": {
+                  "message": "Loan deleted successfully",
+                  "id": 1
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/RecordNotFound"
+          }
+        }
+      }
+    },
+    "/api/investments": {
+      "get": {
+        "tags": [
+          "Investments"
+        ],
+        "summary": "Lấy danh mục đầu tư của người dùng",
+        "operationId": "listInvestments",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/UserIdQuery"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Danh sách khoản đầu tư",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/InvestmentListItem"
+                  }
+                },
+                "example": [
+                  {
+                    "id": 1,
+                    "user_id": 1,
+                    "symbol": "VNM",
+                    "investment_type": "STOCK",
+                    "quantity": 100,
+                    "buy_price": 70000,
+                    "current_price": 72500,
+                    "created_at": "2026-09-01T09:30:00"
+                  }
+                ]
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Investments"
+        ],
+        "summary": "Thêm khoản đầu tư mới",
+        "operationId": "createInvestment",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/InvestmentInput"
+              },
+              "example": {
+                "user_id": 1,
+                "symbol": "BTC",
+                "investment_type": "CRYPTO",
+                "quantity": 0.05,
+                "buy_price": 1500000000,
+                "current_price": 1650000000
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Khoản đầu tư đã tạo",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Investment"
+                },
+                "example": {
+                  "id": 2,
+                  "user_id": 1,
+                  "symbol": "BTC",
+                  "investment_type": "CRYPTO",
+                  "quantity": 0.05,
+                  "buy_price": 1500000000,
+                  "current_price": 1650000000,
+                  "created_at": "2026-10-20T10:00:00",
+                  "updated_at": "2026-10-20T10:00:00"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Dữ liệu không hợp lệ",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "error": "Invalid investment values"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        }
+      }
+    },
+    "/api/investments/{id}": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "description": "ID khoản đầu tư (số nguyên dương)",
+          "schema": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1
+          },
+          "example": 1
+        },
+        {
+          "$ref": "#/components/parameters/UserIdQuery"
+        }
+      ],
+      "get": {
+        "tags": [
+          "Investments"
+        ],
+        "summary": "Lấy chi tiết một khoản đầu tư",
+        "operationId": "getInvestment",
+        "responses": {
+          "200": {
+            "description": "Chi tiết khoản đầu tư",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Investment"
+                },
+                "example": {
+                  "id": 1,
+                  "user_id": 1,
+                  "symbol": "VNM",
+                  "investment_type": "STOCK",
+                  "quantity": 100,
+                  "buy_price": 70000,
+                  "current_price": 72500,
+                  "created_at": "2026-09-01T09:30:00",
+                  "updated_at": "2026-09-01T09:30:00"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/RecordNotFound"
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "Investments"
+        ],
+        "summary": "Cập nhật khoản đầu tư (số lượng, giá vốn, giá hiện tại...)",
+        "operationId": "updateInvestment",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/InvestmentInput"
+              },
+              "example": {
+                "user_id": 1,
+                "symbol": "VNM",
+                "investment_type": "STOCK",
+                "quantity": 150,
+                "buy_price": 70000,
+                "current_price": 75800
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Khoản đầu tư sau khi cập nhật",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Investment"
+                },
+                "example": {
+                  "id": 1,
+                  "user_id": 1,
+                  "symbol": "VNM",
+                  "investment_type": "STOCK",
+                  "quantity": 150,
+                  "buy_price": 70000,
+                  "current_price": 75800,
+                  "created_at": "2026-09-01T09:30:00",
+                  "updated_at": "2026-10-21T10:00:00"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/RecordNotFound"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Investments"
+        ],
+        "summary": "Xoá khoản đầu tư theo ID",
+        "operationId": "deleteInvestment",
+        "responses": {
+          "200": {
+            "description": "Xoá khoản đầu tư thành công",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeleteSuccess"
+                },
+                "example": {
+                  "message": "Investment deleted successfully",
+                  "id": 1
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/RecordNotFound"
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "bearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT"
+      }
+    },
+    "parameters": {
+      "UserIdQuery": {
+        "name": "user_id",
+        "in": "query",
+        "required": false,
+        "description": "**Chỉ ADMIN dùng được** — xem dữ liệu của user khác (vd 1, 2, 3...). Tài khoản USER thường: tham số này bị bỏ qua, luôn trả dữ liệu của chính mình (lấy userId từ JWT). Bỏ trống = dữ liệu của user đang đăng nhập.",
+        "schema": {
+          "type": "integer",
+          "format": "int64",
+          "minimum": 1
+        }
+      }
+    },
+    "responses": {
+      "BadRequest": {
+        "description": "Tham số không hợp lệ",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            },
+            "example": {
+              "error": "user_id must be a positive integer"
+            }
+          }
+        }
+      },
+      "RecordNotFound": {
+        "description": "Không tìm thấy bản ghi của người dùng",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            },
+            "example": {
+              "error": "Record not found"
+            }
+          }
+        }
+      },
+      "Unauthorized": {
+        "description": "Thiếu hoặc sai JWT (do API Gateway trả về)",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/GatewayError"
+            },
+            "example": {
+              "success": false,
+              "error": "UNAUTHORIZED",
+              "message": "Yêu cầu token xác thực (Authorization: Bearer <token>) để truy cập endpoint này.",
+              "path": "/api/assets"
+            }
+          }
+        }
+      }
+    },
+    "schemas": {
+      "Error": {
+        "type": "object",
+        "properties": {
+          "error": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "error"
+        ]
+      },
+      "GatewayError": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "example": false
+          },
+          "error": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          }
+        }
+      },
+      "AssetInput": {
+        "type": "object",
+        "required": [
+          "user_id",
+          "asset_name",
+          "asset_type"
+        ],
+        "properties": {
+          "user_id": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1
+          },
+          "asset_name": {
+            "type": "string",
+            "maxLength": 100
+          },
+          "asset_type": {
+            "type": "string",
+            "maxLength": 50,
+            "description": "VD: BANK_ACCOUNT, CASH, REAL_ESTATE, CRYPTO, STOCK, EQUIPMENT"
+          },
+          "purchase_price": {
+            "type": "number",
+            "minimum": 0,
+            "default": 0
+          },
+          "current_value": {
+            "type": "number",
+            "minimum": 0,
+            "default": 0
+          },
+          "salvage_value": {
+            "type": "number",
+            "minimum": 0,
+            "default": 0
+          },
+          "useful_life_years": {
+            "type": "integer",
+            "minimum": 0,
+            "default": 0
+          },
+          "purchase_date": {
+            "type": "string",
+            "format": "date",
+            "nullable": true
+          },
+          "currency": {
+            "type": "string",
+            "maxLength": 10,
+            "default": "VND",
+            "nullable": true
+          },
+          "note": {
+            "type": "string",
+            "nullable": true
+          }
+        }
+      },
+      "AssetListItem": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "user_id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "asset_name": {
+            "type": "string"
+          },
+          "asset_type": {
+            "type": "string"
+          },
+          "purchase_price": {
+            "type": "number"
+          },
+          "current_value": {
+            "type": "number"
+          },
+          "salvage_value": {
+            "type": "number"
+          },
+          "useful_life_years": {
+            "type": "integer"
+          },
+          "purchase_date": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "currency": {
+            "type": "string",
+            "nullable": true
+          },
+          "note": {
+            "type": "string",
+            "nullable": true
+          }
+        }
+      },
+      "Asset": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/AssetListItem"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "created_at": {
+                "type": "string",
+                "format": "date-time"
+              },
+              "updated_at": {
+                "type": "string",
+                "format": "date-time"
+              }
+            }
+          }
+        ]
+      },
+      "LoanInput": {
+        "type": "object",
+        "required": [
+          "user_id",
+          "loan_title",
+          "principal_amount",
+          "interest_rate",
+          "term_months",
+          "start_date"
+        ],
+        "properties": {
+          "user_id": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1
+          },
+          "loan_title": {
+            "type": "string",
+            "maxLength": 150
+          },
+          "principal_amount": {
+            "type": "number",
+            "exclusiveMinimum": true,
+            "minimum": 0
+          },
+          "interest_rate": {
+            "type": "number",
+            "minimum": 0,
+            "description": "Lãi suất %/năm"
+          },
+          "term_months": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "start_date": {
+            "type": "string",
+            "format": "date"
+          }
+        }
+      },
+      "LoanListItem": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "user_id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "loan_title": {
+            "type": "string"
+          },
+          "principal_amount": {
+            "type": "number"
+          },
+          "interest_rate": {
+            "type": "number"
+          },
+          "term_months": {
+            "type": "integer"
+          },
+          "start_date": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "ACTIVE",
+              "CLOSED"
+            ]
+          }
+        }
+      },
+      "Loan": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/LoanListItem"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "created_at": {
+                "type": "string",
+                "format": "date-time"
+              },
+              "updated_at": {
+                "type": "string",
+                "format": "date-time"
+              }
+            }
+          }
+        ]
+      },
+      "InvestmentInput": {
+        "type": "object",
+        "required": [
+          "user_id",
+          "symbol",
+          "investment_type",
+          "quantity",
+          "buy_price",
+          "current_price"
+        ],
+        "properties": {
+          "user_id": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1
+          },
+          "symbol": {
+            "type": "string",
+            "maxLength": 20
+          },
+          "investment_type": {
+            "type": "string",
+            "maxLength": 50,
+            "description": "VD: STOCK, CRYPTO, GOLD, BOND"
+          },
+          "quantity": {
+            "type": "number",
+            "exclusiveMinimum": true,
+            "minimum": 0
+          },
+          "buy_price": {
+            "type": "number",
+            "minimum": 0
+          },
+          "current_price": {
+            "type": "number",
+            "minimum": 0
+          }
+        }
+      },
+      "InvestmentListItem": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "user_id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "symbol": {
+            "type": "string"
+          },
+          "investment_type": {
+            "type": "string"
+          },
+          "quantity": {
+            "type": "number"
+          },
+          "buy_price": {
+            "type": "number"
+          },
+          "current_price": {
+            "type": "number"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "Investment": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/InvestmentListItem"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "updated_at": {
+                "type": "string",
+                "format": "date-time"
+              }
+            }
+          }
+        ]
+      },
+      "DeleteSuccess": {
+        "type": "object",
+        "properties": {
+          "message": {
+            "type": "string"
+          },
+          "id": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      }
+    }
+  }
+}

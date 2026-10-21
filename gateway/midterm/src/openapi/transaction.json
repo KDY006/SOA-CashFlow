@@ -1,0 +1,1953 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "Transaction & Budget Service (PHP)",
+    "version": "1.0.0-midterm",
+    "description": "Dịch vụ quản lý giao dịch thu/chi, danh mục và ngân sách của hệ thống SOA CashFlow, viết bằng **PHP Native** (PDO MySQL `transaction_db`), chạy nội bộ ở cổng **8082**.\n\nMọi request nên đi qua **API Gateway (Node.js, cổng 8080)**: gateway chuyển tiếp nguyên vẹn path & query (prefix `/api/transactions`, `/api/budgets`, `/api/categories` → transaction-service), nên path trong tài liệu này trùng với router `index.php` của service.\n\n- Tất cả endpoint yêu cầu JWT Bearer (gateway kiểm tra). Gateway inject `X-User-Id` từ JWT — client **không** cần gửi header này.\n- Thứ tự xác định user: query `user_id` → body `user_id` → header `X-User-Id` → mặc định `1`.\n- Phản hồi thành công: `{ \"success\": true, \"message\": \"...\", \"data\": ... }`; lỗi: `{ \"success\": false, \"message\": \"...\" }`.\n- Method không được hỗ trợ trên một path hợp lệ sẽ rơi xuống 404 `Đường dẫn API không tồn tại`.\n- Lưu ý: `GET/PUT/DELETE /{id}` không kiểm tra quyền sở hữu theo user."
+  },
+  "servers": [
+    {
+      "url": "/",
+      "description": "Qua API Gateway"
+    }
+  ],
+  "tags": [
+    {
+      "name": "Transactions",
+      "description": "Giao dịch thu / chi / chuyển khoản"
+    },
+    {
+      "name": "Budgets",
+      "description": "Ngân sách theo danh mục & tiến độ chi tiêu"
+    },
+    {
+      "name": "Categories",
+      "description": "Danh mục thu / chi (dùng chung)"
+    }
+  ],
+  "security": [
+    {
+      "bearerAuth": []
+    }
+  ],
+  "paths": {
+    "/api/transactions": {
+      "get": {
+        "tags": [
+          "Transactions"
+        ],
+        "summary": "Lấy danh sách giao dịch (lọc & phân trang)",
+        "description": "Sắp xếp theo `transaction_date` giảm dần. Lọc theo user (query `user_id` hoặc `X-User-Id`).",
+        "operationId": "listTransactions",
+        "parameters": [
+          {
+            "name": "user_id",
+            "in": "query",
+            "required": false,
+            "description": "**Chỉ ADMIN dùng được** — xem dữ liệu của user khác (vd 1, 2, 3...). Tài khoản USER thường: tham số này bị bỏ qua, luôn trả dữ liệu của chính mình (lấy userId từ JWT). Bỏ trống = dữ liệu của user đang đăng nhập.",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "type",
+            "in": "query",
+            "description": "Loại giao dịch (không phân biệt hoa thường)",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "INCOME",
+                "EXPENSE",
+                "TRANSFER"
+              ]
+            }
+          },
+          {
+            "name": "category_id",
+            "in": "query",
+            "description": "Lọc theo ID danh mục",
+            "schema": {
+              "type": "integer"
+            },
+            "example": 3
+          },
+          {
+            "name": "from_date",
+            "in": "query",
+            "description": "transaction_date >= giá trị này (YYYY-MM-DD hoặc YYYY-MM-DD HH:MM:SS)",
+            "schema": {
+              "type": "string"
+            },
+            "example": "2026-10-01"
+          },
+          {
+            "name": "to_date",
+            "in": "query",
+            "description": "transaction_date <= giá trị này",
+            "schema": {
+              "type": "string"
+            },
+            "example": "2026-10-31 23:59:59"
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "description": "Số bản ghi tối đa",
+            "schema": {
+              "type": "integer",
+              "default": 100
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "description": "Bỏ qua N bản ghi đầu",
+            "schema": {
+              "type": "integer",
+              "default": 0
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Danh sách giao dịch",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/SuccessEnvelope"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "data": {
+                          "type": "array",
+                          "items": {
+                            "$ref": "#/components/schemas/Transaction"
+                          }
+                        }
+                      }
+                    }
+                  ]
+                },
+                "examples": {
+                  "ok": {
+                    "summary": "Thành công",
+                    "value": {
+                      "success": true,
+                      "message": "Lấy danh sách giao dịch thành công",
+                      "data": [
+                        {
+                          "id": 2,
+                          "user_id": 1,
+                          "category_id": 3,
+                          "category": "Ăn uống & Cà phê",
+                          "amount": 150000,
+                          "type": "EXPENSE",
+                          "description": "Ăn tối cùng nhóm bạn",
+                          "transaction_date": "2026-10-02 19:30:00",
+                          "created_at": "2026-10-02 19:30:05",
+                          "updated_at": "2026-10-02 19:30:05",
+                          "category_name_rel": "Ăn uống & Cà phê",
+                          "category_icon": "fa-utensils"
+                        },
+                        {
+                          "id": 1,
+                          "user_id": 1,
+                          "category_id": 1,
+                          "category": "Lương cố định",
+                          "amount": 20000000,
+                          "type": "INCOME",
+                          "description": "Lương nhận đầu tháng 10",
+                          "transaction_date": "2026-10-01 09:00:00",
+                          "created_at": "2026-10-01 09:00:00",
+                          "updated_at": "2026-10-01 09:00:00",
+                          "category_name_rel": "Lương cố định",
+                          "category_icon": "fa-wallet"
+                        }
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Transactions"
+        ],
+        "summary": "Tạo giao dịch mới (kèm cảnh báo ngân sách)",
+        "description": "Tạo giao dịch. Có thể truyền `category_id` hoặc tên `category` (service tự tra cứu ID/tên còn lại). `type` không hợp lệ sẽ bị đưa về `EXPENSE`; thiếu danh mục sẽ dùng \"Chi tiêu khác\"/\"Thu nhập khác\". Với giao dịch `EXPENSE` có danh mục, nếu tổng chi trong kỳ ngân sách ≥ 80% hạn mức sẽ trả thêm `budget_alert` (WARNING hoặc EXCEEDED).",
+        "operationId": "createTransaction",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TransactionCreateRequest"
+              },
+              "examples": {
+                "expense": {
+                  "summary": "Chi tiêu theo category_id",
+                  "value": {
+                    "amount": 150000,
+                    "type": "EXPENSE",
+                    "category_id": 3,
+                    "description": "Ăn tối cùng nhóm bạn",
+                    "transaction_date": "2026-10-02 19:30:00"
+                  }
+                },
+                "incomeByName": {
+                  "summary": "Thu nhập theo tên danh mục",
+                  "value": {
+                    "amount": 20000000,
+                    "type": "INCOME",
+                    "category": "Lương cố định",
+                    "description": "Lương nhận đầu tháng 10"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Tạo giao dịch thành công",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/SuccessEnvelope"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "data": {
+                          "$ref": "#/components/schemas/TransactionCreateResult"
+                        }
+                      }
+                    }
+                  ]
+                },
+                "examples": {
+                  "created": {
+                    "summary": "Tạo thành công",
+                    "value": {
+                      "success": true,
+                      "message": "Tạo giao dịch thành công",
+                      "data": {
+                        "transaction": {
+                          "id": 2,
+                          "user_id": 1,
+                          "category_id": 3,
+                          "category": "Ăn uống & Cà phê",
+                          "amount": 150000,
+                          "type": "EXPENSE",
+                          "description": "Ăn tối cùng nhóm bạn",
+                          "transaction_date": "2026-10-02 19:30:00",
+                          "created_at": "2026-10-02 19:30:05",
+                          "updated_at": "2026-10-02 19:30:05",
+                          "category_name_rel": "Ăn uống & Cà phê",
+                          "category_icon": "fa-utensils"
+                        }
+                      }
+                    }
+                  },
+                  "warning": {
+                    "summary": "Kèm cảnh báo > 80% ngân sách",
+                    "value": {
+                      "success": true,
+                      "message": "Tạo giao dịch thành công",
+                      "data": {
+                        "transaction": {
+                          "id": 6,
+                          "user_id": 1,
+                          "category_id": 3,
+                          "category": "Ăn uống & Cà phê",
+                          "amount": 3500000,
+                          "type": "EXPENSE",
+                          "description": "Tiệc sinh nhật",
+                          "transaction_date": "2026-10-02 19:30:00",
+                          "created_at": "2026-10-02 19:30:05",
+                          "updated_at": "2026-10-02 19:30:05",
+                          "category_name_rel": "Ăn uống & Cà phê",
+                          "category_icon": "fa-utensils"
+                        },
+                        "budget_alert": {
+                          "status": "WARNING",
+                          "category": "Ăn uống & Cà phê",
+                          "amount_limit": 5000000,
+                          "total_spent": 4100000,
+                          "remaining": 900000,
+                          "message": "CHÚ Ý: Đã sử dụng trên 80% ngân sách 'Ăn uống & Cà phê'!"
+                        }
+                      }
+                    }
+                  },
+                  "exceeded": {
+                    "summary": "Kèm cảnh báo vượt ngân sách",
+                    "value": {
+                      "success": true,
+                      "message": "Tạo giao dịch thành công",
+                      "data": {
+                        "transaction": {
+                          "id": 7,
+                          "user_id": 1,
+                          "category_id": 3,
+                          "category": "Ăn uống & Cà phê",
+                          "amount": 1500000,
+                          "type": "EXPENSE",
+                          "description": "Nhà hàng cuối tuần",
+                          "transaction_date": "2026-10-02 19:30:00",
+                          "created_at": "2026-10-02 19:30:05",
+                          "updated_at": "2026-10-02 19:30:05",
+                          "category_name_rel": "Ăn uống & Cà phê",
+                          "category_icon": "fa-utensils"
+                        },
+                        "budget_alert": {
+                          "status": "EXCEEDED",
+                          "category": "Ăn uống & Cà phê",
+                          "amount_limit": 5000000,
+                          "total_spent": 5600000,
+                          "over_amount": 600000,
+                          "message": "CẢNH BÁO: Giao dịch này đã làm vượt ngân sách 'Ăn uống & Cà phê'!"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Dữ liệu không hợp lệ",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "examples": {
+                  "badJson": {
+                    "summary": "JSON không hợp lệ",
+                    "value": {
+                      "success": false,
+                      "message": "Dữ liệu JSON gửi lên không hợp lệ"
+                    }
+                  },
+                  "badAmount": {
+                    "summary": "Số tiền không hợp lệ",
+                    "value": {
+                      "success": false,
+                      "message": "Số tiền giao dịch (amount) phải là số dương lớn hơn 0"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        }
+      }
+    },
+    "/api/transactions/{id}": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "description": "ID giao dịch",
+          "schema": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "example": 1
+        }
+      ],
+      "get": {
+        "tags": [
+          "Transactions"
+        ],
+        "summary": "Xem chi tiết giao dịch",
+        "operationId": "getTransaction",
+        "responses": {
+          "200": {
+            "description": "Chi tiết giao dịch",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/SuccessEnvelope"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "data": {
+                          "$ref": "#/components/schemas/Transaction"
+                        }
+                      }
+                    }
+                  ]
+                },
+                "examples": {
+                  "ok": {
+                    "summary": "Thành công",
+                    "value": {
+                      "success": true,
+                      "message": "Lấy chi tiết giao dịch thành công",
+                      "data": {
+                        "id": 2,
+                        "user_id": 1,
+                        "category_id": 3,
+                        "category": "Ăn uống & Cà phê",
+                        "amount": 150000,
+                        "type": "EXPENSE",
+                        "description": "Ăn tối cùng nhóm bạn",
+                        "transaction_date": "2026-10-02 19:30:00",
+                        "created_at": "2026-10-02 19:30:05",
+                        "updated_at": "2026-10-02 19:30:05",
+                        "category_name_rel": "Ăn uống & Cà phê",
+                        "category_icon": "fa-utensils"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "description": "Không tìm thấy",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "examples": {
+                  "notFound": {
+                    "summary": "Không tồn tại",
+                    "value": {
+                      "success": false,
+                      "message": "Không tìm thấy giao dịch với ID này"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "Transactions"
+        ],
+        "summary": "Cập nhật giao dịch (từng phần)",
+        "description": "Chỉ cập nhật các trường được gửi. Không có validate amount/type ở bước cập nhật.",
+        "operationId": "updateTransaction",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TransactionUpdateRequest"
+              },
+              "examples": {
+                "amount": {
+                  "summary": "Sửa số tiền & mô tả",
+                  "value": {
+                    "amount": 180000,
+                    "description": "Ăn tối cùng nhóm bạn (đã gồm tip)"
+                  }
+                },
+                "category": {
+                  "summary": "Đổi danh mục",
+                  "value": {
+                    "category_id": 5,
+                    "category": "Mua sắm & Giải trí"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Cập nhật thành công",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/SuccessEnvelope"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "data": {
+                          "$ref": "#/components/schemas/Transaction"
+                        }
+                      }
+                    }
+                  ]
+                },
+                "examples": {
+                  "ok": {
+                    "summary": "Thành công",
+                    "value": {
+                      "success": true,
+                      "message": "Cập nhật giao dịch thành công",
+                      "data": {
+                        "id": 2,
+                        "user_id": 1,
+                        "category_id": 3,
+                        "category": "Ăn uống & Cà phê",
+                        "amount": 180000,
+                        "type": "EXPENSE",
+                        "description": "Ăn tối cùng nhóm bạn (đã gồm tip)",
+                        "transaction_date": "2026-10-02 19:30:00",
+                        "created_at": "2026-10-02 19:30:05",
+                        "updated_at": "2026-10-03 08:00:00",
+                        "category_name_rel": "Ăn uống & Cà phê",
+                        "category_icon": "fa-utensils"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Body rỗng / không hợp lệ",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "examples": {
+                  "empty": {
+                    "summary": "Body rỗng",
+                    "value": {
+                      "success": false,
+                      "message": "Dữ liệu cập nhật không hợp lệ"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "description": "Không tìm thấy",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "examples": {
+                  "notFound": {
+                    "summary": "Không tồn tại",
+                    "value": {
+                      "success": false,
+                      "message": "Không tìm thấy giao dịch để cập nhật"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Transactions"
+        ],
+        "summary": "Xoá giao dịch",
+        "operationId": "deleteTransaction",
+        "responses": {
+          "200": {
+            "description": "Xoá thành công",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/SuccessEnvelope"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "data": {
+                          "nullable": true,
+                          "example": null
+                        }
+                      }
+                    }
+                  ]
+                },
+                "examples": {
+                  "ok": {
+                    "summary": "Thành công",
+                    "value": {
+                      "success": true,
+                      "message": "Xóa giao dịch thành công",
+                      "data": null
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "description": "Không tìm thấy",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "examples": {
+                  "notFound": {
+                    "summary": "Không tồn tại",
+                    "value": {
+                      "success": false,
+                      "message": "Không tìm thấy giao dịch để xóa"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        }
+      }
+    },
+    "/api/budgets": {
+      "get": {
+        "tags": [
+          "Budgets"
+        ],
+        "summary": "Lấy danh sách ngân sách của người dùng",
+        "operationId": "listBudgets",
+        "parameters": [
+          {
+            "name": "user_id",
+            "in": "query",
+            "required": false,
+            "description": "**Chỉ ADMIN dùng được** — xem dữ liệu của user khác (vd 1, 2, 3...). Tài khoản USER thường: tham số này bị bỏ qua, luôn trả dữ liệu của chính mình (lấy userId từ JWT). Bỏ trống = dữ liệu của user đang đăng nhập.",
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Danh sách ngân sách",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/SuccessEnvelope"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "data": {
+                          "type": "array",
+                          "items": {
+                            "$ref": "#/components/schemas/Budget"
+                          }
+                        }
+                      }
+                    }
+                  ]
+                },
+                "examples": {
+                  "ok": {
+                    "summary": "Thành công",
+                    "value": {
+                      "success": true,
+                      "message": "Lấy danh sách ngân sách thành công",
+                      "data": [
+                        {
+                          "id": 1,
+                          "user_id": 1,
+                          "category_id": 3,
+                          "amount_limit": 5000000,
+                          "period": "MONTHLY",
+                          "start_date": "2026-10-01",
+                          "end_date": "2026-10-31",
+                          "created_at": "2026-10-01 00:00:00",
+                          "updated_at": "2026-10-01 00:00:00",
+                          "category_name": "Ăn uống & Cà phê",
+                          "category_icon": "fa-utensils"
+                        }
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Budgets"
+        ],
+        "summary": "Thiết lập ngân sách mới",
+        "description": "Nếu thiếu `start_date` hoặc `end_date` thì mặc định là ngày đầu & cuối tháng hiện tại. `period` mặc định `MONTHLY`.",
+        "operationId": "createBudget",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BudgetCreateRequest"
+              },
+              "examples": {
+                "full": {
+                  "summary": "Đầy đủ",
+                  "value": {
+                    "category_id": 3,
+                    "amount_limit": 5000000,
+                    "period": "MONTHLY",
+                    "start_date": "2026-10-01",
+                    "end_date": "2026-10-31"
+                  }
+                },
+                "minimal": {
+                  "summary": "Tối thiểu (tháng hiện tại)",
+                  "value": {
+                    "category_id": 5,
+                    "amount_limit": 2000000
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Tạo ngân sách thành công",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/SuccessEnvelope"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "data": {
+                          "$ref": "#/components/schemas/Budget"
+                        }
+                      }
+                    }
+                  ]
+                },
+                "examples": {
+                  "created": {
+                    "summary": "Thành công",
+                    "value": {
+                      "success": true,
+                      "message": "Thiết lập ngân sách thành công",
+                      "data": {
+                        "id": 1,
+                        "user_id": 1,
+                        "category_id": 3,
+                        "amount_limit": 5000000,
+                        "period": "MONTHLY",
+                        "start_date": "2026-10-01",
+                        "end_date": "2026-10-31",
+                        "created_at": "2026-10-01 00:00:00",
+                        "updated_at": "2026-10-01 00:00:00",
+                        "category_name": "Ăn uống & Cà phê",
+                        "category_icon": "fa-utensils"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Thiếu trường bắt buộc",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "examples": {
+                  "missing": {
+                    "summary": "Thiếu category_id/amount_limit",
+                    "value": {
+                      "success": false,
+                      "message": "Thiếu thông tin bắt buộc: category_id và amount_limit"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        }
+      }
+    },
+    "/api/budgets/progress": {
+      "get": {
+        "tags": [
+          "Budgets"
+        ],
+        "summary": "Tiến độ sử dụng ngân sách",
+        "description": "Tính số đã chi, còn lại, % sử dụng cho từng ngân sách. `status`: SAFE (<80%), WARNING (≥80%), EXCEEDED (≥100%).",
+        "operationId": "getBudgetProgress",
+        "parameters": [
+          {
+            "name": "user_id",
+            "in": "query",
+            "required": false,
+            "description": "**Chỉ ADMIN dùng được** — xem dữ liệu của user khác (vd 1, 2, 3...). Tài khoản USER thường: tham số này bị bỏ qua, luôn trả dữ liệu của chính mình (lấy userId từ JWT). Bỏ trống = dữ liệu của user đang đăng nhập.",
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Báo cáo tiến độ",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/SuccessEnvelope"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "data": {
+                          "type": "array",
+                          "items": {
+                            "$ref": "#/components/schemas/BudgetProgress"
+                          }
+                        }
+                      }
+                    }
+                  ]
+                },
+                "examples": {
+                  "ok": {
+                    "summary": "Thành công",
+                    "value": {
+                      "success": true,
+                      "message": "Lấy tiến độ sử dụng ngân sách thành công",
+                      "data": [
+                        {
+                          "budget_id": 1,
+                          "category_id": 3,
+                          "category_name": "Ăn uống & Cà phê",
+                          "category_icon": "fa-utensils",
+                          "amount_limit": 5000000,
+                          "spent": 600000,
+                          "remaining": 4400000,
+                          "percentage": 12,
+                          "status": "SAFE",
+                          "period": "MONTHLY",
+                          "start_date": "2026-10-01",
+                          "end_date": "2026-10-31"
+                        },
+                        {
+                          "budget_id": 2,
+                          "category_id": 5,
+                          "category_name": "Mua sắm & Giải trí",
+                          "category_icon": "fa-shopping-cart",
+                          "amount_limit": 2000000,
+                          "spent": 1200000,
+                          "remaining": 800000,
+                          "percentage": 60,
+                          "status": "SAFE",
+                          "period": "MONTHLY",
+                          "start_date": "2026-10-01",
+                          "end_date": "2026-10-31"
+                        }
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        }
+      }
+    },
+    "/api/budgets/{id}": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "description": "ID ngân sách",
+          "schema": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "example": 1
+        }
+      ],
+      "get": {
+        "tags": [
+          "Budgets"
+        ],
+        "summary": "Xem chi tiết ngân sách",
+        "operationId": "getBudget",
+        "responses": {
+          "200": {
+            "description": "Chi tiết ngân sách",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/SuccessEnvelope"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "data": {
+                          "$ref": "#/components/schemas/Budget"
+                        }
+                      }
+                    }
+                  ]
+                },
+                "examples": {
+                  "ok": {
+                    "summary": "Thành công",
+                    "value": {
+                      "success": true,
+                      "message": "Lấy chi tiết ngân sách thành công",
+                      "data": {
+                        "id": 1,
+                        "user_id": 1,
+                        "category_id": 3,
+                        "amount_limit": 5000000,
+                        "period": "MONTHLY",
+                        "start_date": "2026-10-01",
+                        "end_date": "2026-10-31",
+                        "created_at": "2026-10-01 00:00:00",
+                        "updated_at": "2026-10-01 00:00:00",
+                        "category_name": "Ăn uống & Cà phê",
+                        "category_icon": "fa-utensils"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "description": "Không tìm thấy",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "examples": {
+                  "notFound": {
+                    "summary": "Không tồn tại",
+                    "value": {
+                      "success": false,
+                      "message": "Không tìm thấy ngân sách với ID này"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "Budgets"
+        ],
+        "summary": "Cập nhật ngân sách (từng phần)",
+        "operationId": "updateBudget",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BudgetUpdateRequest"
+              },
+              "examples": {
+                "limit": {
+                  "summary": "Tăng hạn mức",
+                  "value": {
+                    "amount_limit": 6000000
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Cập nhật thành công",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/SuccessEnvelope"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "data": {
+                          "$ref": "#/components/schemas/Budget"
+                        }
+                      }
+                    }
+                  ]
+                },
+                "examples": {
+                  "ok": {
+                    "summary": "Thành công",
+                    "value": {
+                      "success": true,
+                      "message": "Cập nhật ngân sách thành công",
+                      "data": {
+                        "id": 1,
+                        "user_id": 1,
+                        "category_id": 3,
+                        "amount_limit": 6000000,
+                        "period": "MONTHLY",
+                        "start_date": "2026-10-01",
+                        "end_date": "2026-10-31",
+                        "created_at": "2026-10-01 00:00:00",
+                        "updated_at": "2026-10-15 10:00:00",
+                        "category_name": "Ăn uống & Cà phê",
+                        "category_icon": "fa-utensils"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Body rỗng / không hợp lệ",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "examples": {
+                  "empty": {
+                    "summary": "Body rỗng",
+                    "value": {
+                      "success": false,
+                      "message": "Dữ liệu cập nhật không hợp lệ"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "description": "Không tìm thấy",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "examples": {
+                  "notFound": {
+                    "summary": "Không tồn tại",
+                    "value": {
+                      "success": false,
+                      "message": "Không tìm thấy ngân sách để cập nhật"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Budgets"
+        ],
+        "summary": "Xoá ngân sách",
+        "operationId": "deleteBudget",
+        "responses": {
+          "200": {
+            "description": "Xoá thành công",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/SuccessEnvelope"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "data": {
+                          "nullable": true,
+                          "example": null
+                        }
+                      }
+                    }
+                  ]
+                },
+                "examples": {
+                  "ok": {
+                    "summary": "Thành công",
+                    "value": {
+                      "success": true,
+                      "message": "Xóa ngân sách thành công",
+                      "data": null
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "description": "Không tìm thấy",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "examples": {
+                  "notFound": {
+                    "summary": "Không tồn tại",
+                    "value": {
+                      "success": false,
+                      "message": "Không tìm thấy ngân sách để xóa"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        }
+      }
+    },
+    "/api/categories": {
+      "get": {
+        "tags": [
+          "Categories"
+        ],
+        "summary": "Lấy danh sách danh mục",
+        "operationId": "listCategories",
+        "parameters": [
+          {
+            "name": "type",
+            "in": "query",
+            "description": "Lọc theo loại danh mục",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "INCOME",
+                "EXPENSE"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Danh sách danh mục",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/SuccessEnvelope"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "data": {
+                          "type": "array",
+                          "items": {
+                            "$ref": "#/components/schemas/Category"
+                          }
+                        }
+                      }
+                    }
+                  ]
+                },
+                "examples": {
+                  "ok": {
+                    "summary": "Thành công",
+                    "value": {
+                      "success": true,
+                      "message": "Lấy danh sách danh mục thành công",
+                      "data": [
+                        {
+                          "id": 1,
+                          "name": "Lương cố định",
+                          "type": "INCOME",
+                          "icon": "fa-wallet"
+                        },
+                        {
+                          "id": 2,
+                          "name": "Thưởng & Đầu tư",
+                          "type": "INCOME",
+                          "icon": "fa-chart-line"
+                        },
+                        {
+                          "id": 3,
+                          "name": "Ăn uống & Cà phê",
+                          "type": "EXPENSE",
+                          "icon": "fa-utensils"
+                        },
+                        {
+                          "id": 4,
+                          "name": "Tiền nhà & Tiện ích",
+                          "type": "EXPENSE",
+                          "icon": "fa-home"
+                        },
+                        {
+                          "id": 5,
+                          "name": "Mua sắm & Giải trí",
+                          "type": "EXPENSE",
+                          "icon": "fa-shopping-cart"
+                        }
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Categories"
+        ],
+        "summary": "Tạo danh mục mới",
+        "description": "`type` mặc định `EXPENSE`, `icon` mặc định `fa-tag`.",
+        "operationId": "createCategory",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CategoryCreateRequest"
+              },
+              "examples": {
+                "expense": {
+                  "summary": "Danh mục chi tiêu",
+                  "value": {
+                    "name": "Di chuyển & Xăng xe",
+                    "type": "EXPENSE",
+                    "icon": "fa-car"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Tạo danh mục thành công",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/SuccessEnvelope"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "data": {
+                          "$ref": "#/components/schemas/Category"
+                        }
+                      }
+                    }
+                  ]
+                },
+                "examples": {
+                  "created": {
+                    "summary": "Thành công",
+                    "value": {
+                      "success": true,
+                      "message": "Tạo danh mục mới thành công",
+                      "data": {
+                        "id": 6,
+                        "name": "Di chuyển & Xăng xe",
+                        "type": "EXPENSE",
+                        "icon": "fa-car"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Dữ liệu không hợp lệ",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "examples": {
+                  "nameRequired": {
+                    "summary": "Thiếu tên",
+                    "value": {
+                      "success": false,
+                      "message": "Tên danh mục (name) không được để trống"
+                    }
+                  },
+                  "badType": {
+                    "summary": "Sai loại",
+                    "value": {
+                      "success": false,
+                      "message": "Loại danh mục (type) phải là INCOME hoặc EXPENSE"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "bearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT"
+      }
+    },
+    "responses": {
+      "Unauthorized": {
+        "description": "Gateway từ chối do thiếu hoặc sai JWT",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorResponse"
+            },
+            "examples": {
+              "missing": {
+                "summary": "Thiếu token",
+                "value": {
+                  "success": false,
+                  "error": "UNAUTHORIZED",
+                  "message": "Yêu cầu token xác thực (Authorization: Bearer <token>) để truy cập endpoint này.",
+                  "path": "/api/transactions"
+                }
+              },
+              "invalid": {
+                "summary": "Token không hợp lệ",
+                "value": {
+                  "success": false,
+                  "error": "UNAUTHORIZED",
+                  "message": "Token xác thực không hợp lệ: Token expired"
+                }
+              }
+            }
+          }
+        }
+      },
+      "InternalError": {
+        "description": "Lỗi hệ thống / CSDL",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorResponse"
+            },
+            "examples": {
+              "internal": {
+                "summary": "Lỗi nội bộ",
+                "value": {
+                  "success": false,
+                  "message": "Lỗi hệ thống nội bộ: SQLSTATE[23000]: Integrity constraint violation"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "schemas": {
+      "SuccessEnvelope": {
+        "type": "object",
+        "required": [
+          "success",
+          "message",
+          "data"
+        ],
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "example": true
+          },
+          "message": {
+            "type": "string",
+            "example": "Thao tác thành công"
+          },
+          "data": {
+            "nullable": true,
+            "description": "Dữ liệu trả về (object, array hoặc null)"
+          }
+        }
+      },
+      "ErrorResponse": {
+        "type": "object",
+        "required": [
+          "success",
+          "message"
+        ],
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "example": false
+          },
+          "message": {
+            "type": "string",
+            "example": "Không tìm thấy giao dịch với ID này"
+          },
+          "errors": {
+            "nullable": true,
+            "description": "Chi tiết lỗi (nếu có)"
+          },
+          "error": {
+            "type": "string",
+            "description": "Chỉ có khi lỗi phát sinh tại API Gateway",
+            "example": "UNAUTHORIZED"
+          },
+          "path": {
+            "type": "string",
+            "description": "Chỉ có trong lỗi 401 thiếu token của gateway"
+          }
+        }
+      },
+      "Category": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "example": 3
+          },
+          "name": {
+            "type": "string",
+            "example": "Ăn uống & Cà phê"
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "INCOME",
+              "EXPENSE"
+            ],
+            "example": "EXPENSE"
+          },
+          "icon": {
+            "type": "string",
+            "nullable": true,
+            "example": "fa-utensils"
+          }
+        }
+      },
+      "CategoryCreateRequest": {
+        "type": "object",
+        "required": [
+          "name"
+        ],
+        "properties": {
+          "name": {
+            "type": "string",
+            "maxLength": 100,
+            "example": "Di chuyển & Xăng xe"
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "INCOME",
+              "EXPENSE"
+            ],
+            "default": "EXPENSE",
+            "example": "EXPENSE"
+          },
+          "icon": {
+            "type": "string",
+            "default": "fa-tag",
+            "example": "fa-car"
+          }
+        }
+      },
+      "Transaction": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "format": "int64",
+            "example": 2
+          },
+          "user_id": {
+            "type": "integer",
+            "format": "int64",
+            "example": 1
+          },
+          "category_id": {
+            "type": "integer",
+            "nullable": true,
+            "example": 3
+          },
+          "category": {
+            "type": "string",
+            "description": "Tên danh mục lưu kèm giao dịch",
+            "example": "Ăn uống & Cà phê"
+          },
+          "amount": {
+            "type": "number",
+            "format": "double",
+            "example": 150000
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "INCOME",
+              "EXPENSE",
+              "TRANSFER"
+            ],
+            "example": "EXPENSE"
+          },
+          "description": {
+            "type": "string",
+            "nullable": true,
+            "example": "Ăn tối cùng nhóm bạn"
+          },
+          "transaction_date": {
+            "type": "string",
+            "description": "YYYY-MM-DD HH:MM:SS",
+            "example": "2026-10-02 19:30:00"
+          },
+          "created_at": {
+            "type": "string",
+            "example": "2026-10-02 19:30:05"
+          },
+          "updated_at": {
+            "type": "string",
+            "example": "2026-10-02 19:30:05"
+          },
+          "category_name_rel": {
+            "type": "string",
+            "nullable": true,
+            "description": "Tên danh mục từ bảng categories (JOIN)",
+            "example": "Ăn uống & Cà phê"
+          },
+          "category_icon": {
+            "type": "string",
+            "nullable": true,
+            "example": "fa-utensils"
+          }
+        }
+      },
+      "TransactionCreateRequest": {
+        "type": "object",
+        "required": [
+          "amount"
+        ],
+        "properties": {
+          "amount": {
+            "type": "number",
+            "exclusiveMinimum": true,
+            "minimum": 0,
+            "example": 150000
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "INCOME",
+              "EXPENSE",
+              "TRANSFER"
+            ],
+            "default": "EXPENSE",
+            "example": "EXPENSE"
+          },
+          "category_id": {
+            "type": "integer",
+            "example": 3
+          },
+          "category": {
+            "type": "string",
+            "description": "Tên danh mục (dùng để tra category_id nếu không gửi)",
+            "example": "Ăn uống & Cà phê"
+          },
+          "description": {
+            "type": "string",
+            "example": "Ăn tối cùng nhóm bạn"
+          },
+          "transaction_date": {
+            "type": "string",
+            "description": "Mặc định là thời điểm hiện tại",
+            "example": "2026-10-02 19:30:00"
+          },
+          "user_id": {
+            "type": "integer",
+            "description": "Tuỳ chọn – mặc định lấy từ X-User-Id (JWT)"
+          }
+        }
+      },
+      "TransactionUpdateRequest": {
+        "type": "object",
+        "minProperties": 1,
+        "properties": {
+          "amount": {
+            "type": "number",
+            "example": 180000
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "INCOME",
+              "EXPENSE",
+              "TRANSFER"
+            ]
+          },
+          "category_id": {
+            "type": "integer",
+            "nullable": true,
+            "example": 5
+          },
+          "category": {
+            "type": "string",
+            "example": "Mua sắm & Giải trí"
+          },
+          "description": {
+            "type": "string",
+            "example": "Ăn tối cùng nhóm bạn (đã gồm tip)"
+          },
+          "transaction_date": {
+            "type": "string",
+            "example": "2026-10-02 20:00:00"
+          },
+          "user_id": {
+            "type": "integer"
+          }
+        }
+      },
+      "BudgetAlert": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "WARNING",
+              "EXCEEDED"
+            ]
+          },
+          "category": {
+            "type": "string",
+            "example": "Ăn uống & Cà phê"
+          },
+          "amount_limit": {
+            "type": "number",
+            "example": 5000000
+          },
+          "total_spent": {
+            "type": "number",
+            "example": 4100000
+          },
+          "remaining": {
+            "type": "number",
+            "description": "Chỉ có khi WARNING",
+            "example": 900000
+          },
+          "over_amount": {
+            "type": "number",
+            "description": "Chỉ có khi EXCEEDED",
+            "example": 600000
+          },
+          "message": {
+            "type": "string"
+          }
+        }
+      },
+      "TransactionCreateResult": {
+        "type": "object",
+        "properties": {
+          "transaction": {
+            "$ref": "#/components/schemas/Transaction"
+          },
+          "budget_alert": {
+            "$ref": "#/components/schemas/BudgetAlert"
+          }
+        }
+      },
+      "Budget": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "example": 1
+          },
+          "user_id": {
+            "type": "integer",
+            "format": "int64",
+            "example": 1
+          },
+          "category_id": {
+            "type": "integer",
+            "example": 3
+          },
+          "amount_limit": {
+            "type": "number",
+            "example": 5000000
+          },
+          "period": {
+            "type": "string",
+            "enum": [
+              "MONTHLY",
+              "YEARLY"
+            ],
+            "example": "MONTHLY"
+          },
+          "start_date": {
+            "type": "string",
+            "format": "date",
+            "example": "2026-10-01"
+          },
+          "end_date": {
+            "type": "string",
+            "format": "date",
+            "example": "2026-10-31"
+          },
+          "created_at": {
+            "type": "string",
+            "example": "2026-10-01 00:00:00"
+          },
+          "updated_at": {
+            "type": "string",
+            "example": "2026-10-01 00:00:00"
+          },
+          "category_name": {
+            "type": "string",
+            "example": "Ăn uống & Cà phê"
+          },
+          "category_icon": {
+            "type": "string",
+            "nullable": true,
+            "example": "fa-utensils"
+          }
+        }
+      },
+      "BudgetCreateRequest": {
+        "type": "object",
+        "required": [
+          "category_id",
+          "amount_limit"
+        ],
+        "properties": {
+          "category_id": {
+            "type": "integer",
+            "example": 3
+          },
+          "amount_limit": {
+            "type": "number",
+            "example": 5000000
+          },
+          "period": {
+            "type": "string",
+            "enum": [
+              "MONTHLY",
+              "YEARLY"
+            ],
+            "default": "MONTHLY"
+          },
+          "start_date": {
+            "type": "string",
+            "format": "date",
+            "example": "2026-10-01"
+          },
+          "end_date": {
+            "type": "string",
+            "format": "date",
+            "example": "2026-10-31"
+          },
+          "user_id": {
+            "type": "integer",
+            "description": "Tuỳ chọn – mặc định lấy từ X-User-Id (JWT)"
+          }
+        }
+      },
+      "BudgetUpdateRequest": {
+        "type": "object",
+        "minProperties": 1,
+        "properties": {
+          "category_id": {
+            "type": "integer"
+          },
+          "amount_limit": {
+            "type": "number",
+            "example": 6000000
+          },
+          "period": {
+            "type": "string",
+            "enum": [
+              "MONTHLY",
+              "YEARLY"
+            ]
+          },
+          "start_date": {
+            "type": "string",
+            "format": "date"
+          },
+          "end_date": {
+            "type": "string",
+            "format": "date"
+          }
+        }
+      },
+      "BudgetProgress": {
+        "type": "object",
+        "properties": {
+          "budget_id": {
+            "type": "integer",
+            "example": 1
+          },
+          "category_id": {
+            "type": "integer",
+            "example": 3
+          },
+          "category_name": {
+            "type": "string",
+            "example": "Ăn uống & Cà phê"
+          },
+          "category_icon": {
+            "type": "string",
+            "nullable": true,
+            "example": "fa-utensils"
+          },
+          "amount_limit": {
+            "type": "number",
+            "example": 5000000
+          },
+          "spent": {
+            "type": "number",
+            "example": 600000
+          },
+          "remaining": {
+            "type": "number",
+            "example": 4400000
+          },
+          "percentage": {
+            "type": "number",
+            "example": 12
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "SAFE",
+              "WARNING",
+              "EXCEEDED"
+            ]
+          },
+          "period": {
+            "type": "string",
+            "example": "MONTHLY"
+          },
+          "start_date": {
+            "type": "string",
+            "format": "date",
+            "example": "2026-10-01"
+          },
+          "end_date": {
+            "type": "string",
+            "format": "date",
+            "example": "2026-10-31"
+          }
+        }
+      }
+    }
+  }
+}

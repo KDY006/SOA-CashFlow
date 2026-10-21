@@ -1,0 +1,979 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "Analytics Service (Python)",
+    "version": "1.0.0-midterm",
+    "description": "Dịch vụ phân tích dòng tiền của SOA CashFlow. Viết bằng Python thuần (stdlib http.server + urllib + sqlite3), chạy nội bộ trên cổng 8084 và được truy cập qua API Gateway (:8080) với prefix /api/analytics.\n\nDữ liệu giao dịch được lấy từ Transaction Service (:8082); báo cáo tổng hợp hàng tháng được lưu trữ vào SQLite (`monthly_reports`) và có thể truy vấn lại qua `GET /api/analytics/reports`. Người dùng được xác định bởi header X-User-Id do Gateway inject từ JWT (ADMIN có thể truyền `user_id` để xem user khác)."
+  },
+  "servers": [
+    {
+      "url": "/",
+      "description": "Qua API Gateway"
+    }
+  ],
+  "security": [
+    {
+      "bearerAuth": []
+    }
+  ],
+  "tags": [
+    {
+      "name": "Analytics",
+      "description": "Thống kê, xu hướng và báo cáo dòng tiền"
+    }
+  ],
+  "paths": {
+    "/api/analytics/summary": {
+      "get": {
+        "tags": [
+          "Analytics"
+        ],
+        "summary": "Tổng hợp thu/chi và dòng tiền ròng trong khoảng thời gian",
+        "operationId": "getSummary",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/UserIdQuery"
+          },
+          {
+            "$ref": "#/components/parameters/FromDate"
+          },
+          {
+            "$ref": "#/components/parameters/ToDate"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Tổng hợp dòng tiền",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/Summary"
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/QueryMeta"
+                    }
+                  }
+                },
+                "example": {
+                  "data": {
+                    "transaction_count": 42,
+                    "income": 25000000,
+                    "expense": 13750000,
+                    "net_cashflow": 11250000,
+                    "currency": "VND"
+                  },
+                  "meta": {
+                    "user_id": 1,
+                    "source": "transaction-service"
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/ValidationError"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "502": {
+            "$ref": "#/components/responses/UpstreamError"
+          }
+        }
+      }
+    },
+    "/api/analytics/trends": {
+      "get": {
+        "tags": [
+          "Analytics"
+        ],
+        "summary": "Xu hướng thu/chi theo tháng, dự báo tháng tới và phát hiện giao dịch bất thường",
+        "operationId": "getTrends",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/UserIdQuery"
+          },
+          {
+            "$ref": "#/components/parameters/FromDate"
+          },
+          {
+            "$ref": "#/components/parameters/ToDate"
+          },
+          {
+            "name": "months",
+            "in": "query",
+            "required": false,
+            "description": "Số tháng gần nhất đưa vào lịch sử (1..36)",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 36,
+              "default": 6
+            },
+            "example": 6
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Lịch sử theo tháng, dự báo (trung bình 3 tháng gần nhất) và danh sách bất thường (median + 3·1.4826·MAD)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/Trends"
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/QueryMeta"
+                    }
+                  }
+                },
+                "example": {
+                  "data": {
+                    "history": [
+                      {
+                        "month": "2026-08",
+                        "income": 20000000,
+                        "expense": 12500000,
+                        "net_cashflow": 7500000
+                      },
+                      {
+                        "month": "2026-09",
+                        "income": 20000000,
+                        "expense": 14000000,
+                        "net_cashflow": 6000000
+                      },
+                      {
+                        "month": "2026-10",
+                        "income": 25000000,
+                        "expense": 13750000,
+                        "net_cashflow": 11250000
+                      }
+                    ],
+                    "forecast": {
+                      "method": "trailing_average_3_months",
+                      "next_month_net_cashflow": 8250000,
+                      "based_on_months": 3
+                    },
+                    "anomalies": [
+                      {
+                        "transaction_id": 128,
+                        "category": "Ăn uống",
+                        "amount": 2500000,
+                        "category_median": 150000,
+                        "threshold": 372390,
+                        "transaction_date": "2026-10-12"
+                      }
+                    ]
+                  },
+                  "meta": {
+                    "user_id": 1,
+                    "source": "transaction-service"
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Tham số không hợp lệ",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "examples": {
+                  "months": {
+                    "value": {
+                      "error": "VALIDATION_ERROR",
+                      "message": "months phải trong khoảng 1..36"
+                    }
+                  },
+                  "dateRange": {
+                    "value": {
+                      "error": "VALIDATION_ERROR",
+                      "message": "from_date phải trước hoặc bằng to_date"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "502": {
+            "$ref": "#/components/responses/UpstreamError"
+          }
+        }
+      }
+    },
+    "/api/analytics/category-breakdown": {
+      "get": {
+        "tags": [
+          "Analytics"
+        ],
+        "summary": "Phân bổ chi tiêu theo danh mục (số tiền và tỷ lệ %)",
+        "operationId": "getCategoryBreakdown",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/UserIdQuery"
+          },
+          {
+            "$ref": "#/components/parameters/FromDate"
+          },
+          {
+            "$ref": "#/components/parameters/ToDate"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Danh sách danh mục chi tiêu, sắp xếp giảm dần theo số tiền",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/CategoryItem"
+                      }
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/QueryMeta"
+                    }
+                  }
+                },
+                "example": {
+                  "data": [
+                    {
+                      "category": "Nhà ở",
+                      "amount": 6000000,
+                      "percentage": 43.64
+                    },
+                    {
+                      "category": "Ăn uống",
+                      "amount": 4500000,
+                      "percentage": 32.73
+                    },
+                    {
+                      "category": "Di chuyển",
+                      "amount": 3250000,
+                      "percentage": 23.64
+                    }
+                  ],
+                  "meta": {
+                    "user_id": 1,
+                    "source": "transaction-service"
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/ValidationError"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "502": {
+            "$ref": "#/components/responses/UpstreamError"
+          }
+        }
+      }
+    },
+    "/api/analytics/anomalies": {
+      "get": {
+        "tags": [
+          "Analytics"
+        ],
+        "summary": "Phát hiện giao dịch chi tiêu bất thường (vượt ngưỡng median + 3·1.4826·MAD)",
+        "operationId": "getAnomalies",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/UserIdQuery"
+          },
+          {
+            "$ref": "#/components/parameters/FromDate"
+          },
+          {
+            "$ref": "#/components/parameters/ToDate"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Danh sách các giao dịch chi tiêu bất thường vượt ngưỡng thống kê theo danh mục",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/Anomaly"
+                      }
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/QueryMeta"
+                    }
+                  }
+                },
+                "example": {
+                  "data": [
+                    {
+                      "transaction_id": 128,
+                      "category": "Ăn uống",
+                      "amount": 2500000,
+                      "category_median": 150000,
+                      "threshold": 372390,
+                      "transaction_date": "2026-10-12"
+                    }
+                  ],
+                  "meta": {
+                    "user_id": 1,
+                    "source": "transaction-service"
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/ValidationError"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "502": {
+            "$ref": "#/components/responses/UpstreamError"
+          }
+        }
+      }
+    },
+    "/api/analytics/reports": {
+      "get": {
+        "tags": [
+          "Analytics"
+        ],
+        "summary": "Lấy danh sách báo cáo tổng hợp tháng đã lưu trong SQLite",
+        "operationId": "getMonthlyReports",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/UserIdQuery"
+          },
+          {
+            "name": "year",
+            "in": "query",
+            "required": false,
+            "description": "Lọc theo năm (2000..2100)",
+            "schema": {
+              "type": "integer",
+              "minimum": 2000,
+              "maximum": 2100
+            },
+            "example": 2026
+          },
+          {
+            "name": "month",
+            "in": "query",
+            "required": false,
+            "description": "Lọc theo tháng (1..12)",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 12
+            },
+            "example": 10
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Danh sách báo cáo tháng đã lưu (tối đa 100 bản ghi, sắp xếp năm/tháng giảm dần)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/AggregateReport"
+                      }
+                    },
+                    "meta": {
+                      "type": "object",
+                      "properties": {
+                        "user_id": {
+                          "type": "integer"
+                        },
+                        "limit": {
+                          "type": "integer",
+                          "example": 100
+                        }
+                      }
+                    }
+                  }
+                },
+                "example": {
+                  "data": [
+                    {
+                      "transaction_count": 14,
+                      "income": 25000000,
+                      "expense": 11200000,
+                      "net_cashflow": 13800000,
+                      "currency": "VND",
+                      "user_id": 1,
+                      "year": 2026,
+                      "month": 10,
+                      "category_breakdown": [
+                        {
+                          "category": "Nhà ở",
+                          "amount": 6000000,
+                          "percentage": 53.57
+                        }
+                      ],
+                      "anomalies": [],
+                      "generated_at": "2026-10-21T06:30:00Z"
+                    }
+                  ],
+                  "meta": {
+                    "user_id": 1,
+                    "limit": 100
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/ValidationError"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        }
+      }
+    },
+    "/api/analytics/aggregate": {
+      "post": {
+        "tags": [
+          "Analytics"
+        ],
+        "summary": "Tạo và lưu báo cáo tổng hợp tháng vào SQLite",
+        "operationId": "aggregateReport",
+        "description": "Nếu body có `transactions` thì dùng trực tiếp danh sách đó; nếu không, service lấy giao dịch từ Transaction Service theo `user_id`, `from_date`, `to_date`. `year`/`month` của báo cáo lấy theo `to_date` (hoặc ngày hiện tại) và tự động lưu/cập nhật vào bảng `monthly_reports` (SQLite).",
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AggregateRequest"
+              },
+              "examples": {
+                "inlineTransactions": {
+                  "summary": "Gửi kèm danh sách giao dịch",
+                  "value": {
+                    "user_id": 1,
+                    "from_date": "2026-10-01",
+                    "to_date": "2026-10-31",
+                    "transactions": [
+                      {
+                        "id": 101,
+                        "amount": 20000000,
+                        "type": "INCOME",
+                        "category": "Lương",
+                        "transaction_date": "2026-10-05"
+                      },
+                      {
+                        "id": 102,
+                        "amount": 6000000,
+                        "type": "EXPENSE",
+                        "category": "Nhà ở",
+                        "transaction_date": "2026-10-06"
+                      },
+                      {
+                        "id": 103,
+                        "amount": 150000,
+                        "type": "EXPENSE",
+                        "category": "Ăn uống",
+                        "transaction_date": "2026-10-07"
+                      }
+                    ]
+                  }
+                },
+                "fetchFromTransactionService": {
+                  "summary": "Tự lấy giao dịch từ Transaction Service",
+                  "value": {
+                    "user_id": 1,
+                    "from_date": "2026-10-01",
+                    "to_date": "2026-10-31"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Báo cáo đã được tạo",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/AggregateReport"
+                    },
+                    "meta": {
+                      "type": "object",
+                      "properties": {
+                        "stored": {
+                          "type": "boolean",
+                          "description": "true khi đã lưu thành công vào SQLite"
+                        },
+                        "database": {
+                          "type": "string",
+                          "example": "sqlite"
+                        }
+                      }
+                    }
+                  }
+                },
+                "example": {
+                  "data": {
+                    "transaction_count": 3,
+                    "income": 20000000,
+                    "expense": 6150000,
+                    "net_cashflow": 13850000,
+                    "currency": "VND",
+                    "user_id": 1,
+                    "year": 2026,
+                    "month": 10,
+                    "category_breakdown": [
+                      {
+                        "category": "Nhà ở",
+                        "amount": 6000000,
+                        "percentage": 97.56
+                      },
+                      {
+                        "category": "Ăn uống",
+                        "amount": 150000,
+                        "percentage": 2.44
+                      }
+                    ],
+                    "anomalies": [],
+                    "generated_at": "2026-10-20T16:30:00Z"
+                  },
+                  "meta": {
+                    "stored": true,
+                    "database": "sqlite"
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Body hoặc tham số không hợp lệ",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "examples": {
+                  "userId": {
+                    "value": {
+                      "error": "VALIDATION_ERROR",
+                      "message": "user_id phải là số nguyên dương"
+                    }
+                  },
+                  "transactions": {
+                    "value": {
+                      "error": "VALIDATION_ERROR",
+                      "message": "transactions[0].amount không được âm"
+                    }
+                  },
+                  "notObject": {
+                    "value": {
+                      "error": "VALIDATION_ERROR",
+                      "message": "Body phải là JSON object"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "502": {
+            "description": "Lỗi nguồn dữ liệu (Transaction Service hoặc MongoDB)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "error": "DATA_SOURCE_ERROR",
+                  "message": "Không lưu được báo cáo vào MongoDB: ServerSelectionTimeoutError"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "bearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT"
+      }
+    },
+    "parameters": {
+      "UserIdQuery": {
+        "name": "user_id",
+        "in": "query",
+        "required": false,
+        "description": "**Chỉ ADMIN dùng được** — xem dữ liệu của user khác (vd 1, 2, 3...). Tài khoản USER thường: tham số này bị bỏ qua, luôn trả dữ liệu của chính mình (lấy userId từ JWT). Bỏ trống = dữ liệu của user đang đăng nhập.",
+        "schema": {
+          "type": "integer",
+          "minimum": 1
+        }
+      },
+      "FromDate": {
+        "name": "from_date",
+        "in": "query",
+        "required": false,
+        "description": "Ngày bắt đầu (ISO, VD 2026-10-01)",
+        "schema": {
+          "type": "string",
+          "format": "date"
+        },
+        "example": "2026-10-01"
+      },
+      "ToDate": {
+        "name": "to_date",
+        "in": "query",
+        "required": false,
+        "description": "Ngày kết thúc (ISO, VD 2026-10-31); phải ≥ from_date",
+        "schema": {
+          "type": "string",
+          "format": "date"
+        },
+        "example": "2026-10-31"
+      }
+    },
+    "responses": {
+      "ValidationError": {
+        "description": "Tham số không hợp lệ",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            },
+            "examples": {
+              "userId": {
+                "value": {
+                  "error": "VALIDATION_ERROR",
+                  "message": "user_id phải là số nguyên dương"
+                }
+              },
+              "dateRange": {
+                "value": {
+                  "error": "VALIDATION_ERROR",
+                  "message": "from_date phải trước hoặc bằng to_date"
+                }
+              }
+            }
+          }
+        }
+      },
+      "UpstreamError": {
+        "description": "Không lấy được dữ liệu từ Transaction Service",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            },
+            "example": {
+              "error": "UPSTREAM_ERROR",
+              "message": "Không lấy được dữ liệu Transaction Service: <urlopen error [Errno 111] Connection refused>"
+            }
+          }
+        }
+      },
+      "Unauthorized": {
+        "description": "Thiếu hoặc sai JWT (do API Gateway trả về)",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/GatewayError"
+            },
+            "example": {
+              "success": false,
+              "error": "UNAUTHORIZED",
+              "message": "Yêu cầu token xác thực (Authorization: Bearer <token>) để truy cập endpoint này.",
+              "path": "/api/analytics/summary"
+            }
+          }
+        }
+      }
+    },
+    "schemas": {
+      "Error": {
+        "type": "object",
+        "properties": {
+          "error": {
+            "type": "string",
+            "example": "VALIDATION_ERROR"
+          },
+          "message": {
+            "type": "string"
+          }
+        }
+      },
+      "GatewayError": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "example": false
+          },
+          "error": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          }
+        }
+      },
+      "QueryMeta": {
+        "type": "object",
+        "properties": {
+          "user_id": {
+            "type": "integer"
+          },
+          "source": {
+            "type": "string",
+            "example": "transaction-service"
+          }
+        }
+      },
+      "Summary": {
+        "type": "object",
+        "properties": {
+          "transaction_count": {
+            "type": "integer"
+          },
+          "income": {
+            "type": "number"
+          },
+          "expense": {
+            "type": "number"
+          },
+          "net_cashflow": {
+            "type": "number"
+          },
+          "currency": {
+            "type": "string",
+            "example": "VND"
+          }
+        }
+      },
+      "CategoryItem": {
+        "type": "object",
+        "properties": {
+          "category": {
+            "type": "string"
+          },
+          "amount": {
+            "type": "number"
+          },
+          "percentage": {
+            "type": "number"
+          }
+        }
+      },
+      "MonthlyPoint": {
+        "type": "object",
+        "properties": {
+          "month": {
+            "type": "string",
+            "example": "2026-10"
+          },
+          "income": {
+            "type": "number"
+          },
+          "expense": {
+            "type": "number"
+          },
+          "net_cashflow": {
+            "type": "number"
+          }
+        }
+      },
+      "Anomaly": {
+        "type": "object",
+        "properties": {
+          "transaction_id": {
+            "type": "integer",
+            "nullable": true
+          },
+          "category": {
+            "type": "string"
+          },
+          "amount": {
+            "type": "number"
+          },
+          "category_median": {
+            "type": "number"
+          },
+          "threshold": {
+            "type": "number"
+          },
+          "transaction_date": {
+            "type": "string",
+            "format": "date"
+          }
+        }
+      },
+      "Trends": {
+        "type": "object",
+        "properties": {
+          "history": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MonthlyPoint"
+            }
+          },
+          "forecast": {
+            "type": "object",
+            "properties": {
+              "method": {
+                "type": "string",
+                "example": "trailing_average_3_months"
+              },
+              "next_month_net_cashflow": {
+                "type": "number"
+              },
+              "based_on_months": {
+                "type": "integer"
+              }
+            }
+          },
+          "anomalies": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Anomaly"
+            }
+          }
+        }
+      },
+      "TransactionInput": {
+        "type": "object",
+        "required": [
+          "amount"
+        ],
+        "properties": {
+          "id": {
+            "type": "integer"
+          },
+          "user_id": {
+            "type": "integer"
+          },
+          "amount": {
+            "type": "number",
+            "minimum": 0
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "INCOME",
+              "EXPENSE",
+              "TRANSFER"
+            ],
+            "default": "EXPENSE"
+          },
+          "category": {
+            "type": "string",
+            "description": "Mặc định 'Khác' (cũng chấp nhận category_name_rel)"
+          },
+          "transaction_date": {
+            "type": "string",
+            "format": "date",
+            "description": "Hoặc dùng trường `date`; giao dịch không có ngày hợp lệ bị bỏ qua"
+          }
+        }
+      },
+      "AggregateRequest": {
+        "type": "object",
+        "properties": {
+          "user_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Nếu bỏ trống dùng X-User-Id từ Gateway"
+          },
+          "from_date": {
+            "type": "string",
+            "format": "date"
+          },
+          "to_date": {
+            "type": "string",
+            "format": "date"
+          },
+          "transactions": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TransactionInput"
+            }
+          }
+        }
+      },
+      "AggregateReport": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/Summary"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "user_id": {
+                "type": "integer"
+              },
+              "year": {
+                "type": "integer"
+              },
+              "month": {
+                "type": "integer"
+              },
+              "category_breakdown": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/CategoryItem"
+                }
+              },
+              "anomalies": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/Anomaly"
+                }
+              },
+              "generated_at": {
+                "type": "string",
+                "format": "date-time"
+              }
+            }
+          }
+        ]
+      }
+    }
+  }
+}

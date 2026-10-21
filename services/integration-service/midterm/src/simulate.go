@@ -64,7 +64,7 @@ func (s *Server) handleSimulate(w http.ResponseWriter, r *http.Request) {
 	ctx := context.WithoutCancel(r.Context())
 
 	acc, err := s.getAccount(ctx, req.AccountID)
-	if errors.Is(err, sql.ErrNoRows) {
+	if errors.Is(err, sql.ErrNoRows) || (err == nil && forbiddenFor(r, acc.UserID)) {
 		fail(w, http.StatusNotFound, "NOT_FOUND", "không tìm thấy tài khoản liên kết")
 		return
 	}

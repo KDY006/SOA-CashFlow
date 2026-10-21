@@ -94,7 +94,7 @@ services:
     environment:
       - PROFILE=native
       - PORT=8083
-      - LISTEN_HOST=0.0.0.0
+      - LISTEN_HOST=*
       - DB_HOST=asset-db
       - DB_CONNECTION=Server=asset-db;Port=3306;Database=asset_db;Uid=root;Pwd=root_password;
     depends_on:
@@ -223,6 +223,8 @@ services:
     image: mysql:8.0
     container_name: cashflow-integration-db
     command: --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci
+    ports:
+      - "3310:3306"
     environment:
       MYSQL_ROOT_PASSWORD: root_password
       MYSQL_DATABASE: integration_db

@@ -52,6 +52,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             flash('danger', 'Webhook thất bại: ' . $r['error']);
         }
         redirect('banking.php?acc=' . $acc);
+    } elseif ($action === 'delete_account') {
+        $accId = (int) ($_POST['account_id'] ?? 0);
+        $r = api('DELETE', '/api/integrations/accounts/' . $accId);
+        if ($r['ok']) {
+            $delAcc = is_array($r['body']) ? ($r['body']['data'] ?? []) : [];
+            $bName = !empty($delAcc['bank_code']) ? bankName($delAcc['bank_code']) : 'ngân hàng';
+            $last4 = !empty($delAcc['account_no']) ? ' ••' . substr((string) $delAcc['account_no'], -4) : '';
+            flash('success', "Đã xoá và huỷ liên kết tài khoản {$bName}{$last4} thành công.");
+        } else {
+            flash('danger', 'Không thể xoá tài khoản ngân hàng: ' . $r['error']);
+        }
+        redirect('banking.php');
     }
     redirect('banking.php');
 }
@@ -138,6 +150,16 @@ $knownBankCodes = ['vcb', 'tcb', 'mb', 'bidv', 'acb', 'vpb', 'tpb', 'vtb', 'agr'
             <?php endif; ?>
             <?php if ($sel): ?>
                 <button class="btn btn-ghost btn-sm" data-open="hookModal"><i class="fa-solid fa-bolt"></i> Giả lập biến động</button>
+                <button type="button" class="btn btn-danger-soft btn-sm"
+                    data-del-acc="<?= (int) $sel['id'] ?>"
+                    data-del-bank="<?= e(bankName($sel['bank_code'])) ?>"
+                    data-del-code="<?= e($sel['bank_code']) ?>"
+                    data-del-no="<?= e($sel['account_no']) ?>"
+                    data-del-holder="<?= e($sel['holder_name']) ?>"
+                    data-del-bal="<?= e(vnd($sel['balance'])) ?>"
+                    title="Xoá / Huỷ liên kết tài khoản ngân hàng đang chọn (<?= e(bankName($sel['bank_code'])) ?>)">
+                    <i class="fa-regular fa-trash-can"></i> Xoá ngân hàng hiện tại
+                </button>
             <?php endif; ?>
             <button class="btn btn-primary btn-sm" data-open="linkModal"><i class="fa-solid fa-plus"></i> Thêm tài khoản</button>
         </div>
@@ -208,14 +230,14 @@ $knownBankCodes = ['vcb', 'tcb', 'mb', 'bidv', 'acb', 'vpb', 'tpb', 'vtb', 'agr'
                             <div class="card-bank-name"><?= e(bankName($a['bank_code'])) ?></div>
                             <div class="card-bank-sub">
                                 <i class="fa-solid fa-circle-check"></i>
-                                <?= $isWallet ? 'Ví điện tử liên kết' : 'Tài khoản thanh toán' ?>
+                                <?= $isWallet ? 'Ví điện tử' : 'TK thanh toán' ?> · <strong>ID #<?= (int) $a['id'] ?></strong>
                             </div>
                         </div>
                         <div class="card-brand-badges">
                             <?php if ($active): ?>
-                                <span class="card-badge-active"><span class="active-pulse-dot"></span>Đang chọn</span>
+                                <span class="card-badge-active"><span class="active-pulse-dot"></span>Đang chọn · #<?= (int) $a['id'] ?></span>
                             <?php else: ?>
-                                <span class="card-badge-code"><?= e($a['bank_code']) ?></span>
+                                <span class="card-badge-code"><?= e($a['bank_code']) ?> · #<?= (int) $a['id'] ?></span>
                             <?php endif; ?>
                         </div>
                     </div>
@@ -248,6 +270,17 @@ $knownBankCodes = ['vcb', 'tcb', 'mb', 'bidv', 'acb', 'vpb', 'tpb', 'vtb', 'agr'
                                 <span><?= e($prefix2) ?> <?= e($last4) ?></span>
                                 <span class="card-copy-acc" data-copy-acc="<?= e($accClean) ?>" title="Sao chép số tài khoản <?= e($accClean) ?>" role="button" tabindex="0">
                                     <i class="fa-regular fa-copy"></i>
+                                </span>
+                                <span class="card-del-acc"
+                                    data-del-acc="<?= (int) $a['id'] ?>"
+                                    data-del-bank="<?= e(bankName($a['bank_code'])) ?>"
+                                    data-del-code="<?= e($a['bank_code']) ?>"
+                                    data-del-no="<?= e($accClean) ?>"
+                                    data-del-holder="<?= e($a['holder_name']) ?>"
+                                    data-del-bal="<?= e(vnd($a['balance'])) ?>"
+                                    title="Huỷ liên kết tài khoản <?= e(bankName($a['bank_code'])) ?> (<?= e($accClean) ?>)"
+                                    role="button" tabindex="0">
+                                    <i class="fa-regular fa-trash-can"></i>
                                 </span>
                             </div>
                         </div>
@@ -470,6 +503,52 @@ $knownBankCodes = ['vcb', 'tcb', 'mb', 'bidv', 'acb', 'vpb', 'tpb', 'vtb', 'agr'
 </div>
 <?php endif; ?>
 
+<!-- Modal xác nhận Xoá / Huỷ liên kết tài khoản ngân hàng -->
+<div class="modal" id="deleteBankModal">
+    <div class="modal-dialog" style="max-width:490px">
+        <div class="modal-head">
+            <span class="p-icon red"><i class="fa-solid fa-link-slash"></i></span>
+            <div style="flex:1">
+                <h3>Huỷ liên kết ngân hàng</h3>
+                <p id="delBankApiPath">DELETE /api/integrations/accounts/<?= (int) ($sel['id'] ?? 0) ?></p>
+            </div>
+            <button type="button" class="modal-close" data-close><i class="fa-solid fa-xmark"></i></button>
+        </div>
+        <form method="post" id="deleteBankForm">
+            <?= csrfField() ?>
+            <input type="hidden" name="action" value="delete_account">
+            <input type="hidden" name="account_id" id="delAccId" value="<?= (int) ($sel['id'] ?? 0) ?>">
+            <div class="modal-body">
+                <div class="del-bank-preview-card" id="delBankPreview">
+                    <div class="del-bank-preview-top">
+                        <div class="del-bank-code-badge" id="delBankCode"><?= e($sel['bank_code'] ?? 'VCB') ?></div>
+                        <div class="del-bank-meta">
+                            <strong id="delBankName"><?= e($sel ? bankName($sel['bank_code']) : 'Ngân hàng') ?></strong>
+                            <span id="delBankNo">STK: <?= e($sel['account_no'] ?? '') ?></span>
+                        </div>
+                        <div class="del-bank-bal">
+                            <small>SỐ DƯ HIỆN TẠI</small>
+                            <b id="delBankBal"><?= e($sel ? vnd($sel['balance']) : '0 ₫') ?></b>
+                        </div>
+                    </div>
+                    <div class="del-bank-preview-foot">
+                        <span><i class="fa-regular fa-user"></i> Chủ TK: <strong id="delBankHolder"><?= e($sel['holder_name'] ?? '') ?></strong></span>
+                        <span class="del-status-tag"><i class="fa-solid fa-triangle-exclamation"></i> Sắp gỡ liên kết</span>
+                    </div>
+                </div>
+                <div class="alert alert-danger" style="margin-top:1rem;margin-bottom:0">
+                    <i class="fa-solid fa-circle-exclamation"></i>
+                    <span>Khi xác nhận xoá, thẻ ngân hàng này và lịch sử biến động số dư (webhook) thuộc tài khoản sẽ bị gỡ khỏi Open Banking Gateway. Các giao dịch thu/chi đã đồng bộ trước đó vẫn được giữ nguyên.</span>
+                </div>
+            </div>
+            <div class="modal-foot">
+                <button type="button" class="btn btn-ghost" data-close>Giữ lại tài khoản</button>
+                <button type="submit" class="btn btn-danger"><i class="fa-solid fa-trash-can"></i> Xác nhận xoá ngân hàng</button>
+            </div>
+        </form>
+    </div>
+</div>
+
 <script>
 document.addEventListener('DOMContentLoaded', () => {
     // Chọn nhanh ngân hàng bằng lưới Icon trong Modal Liên kết
@@ -512,6 +591,33 @@ document.addEventListener('DOMContentLoaded', () => {
                     }, 1600);
                 }
                 CF.toast('Đã sao chép số tài khoản', accNo, 'success', 2800);
+                return;
+            }
+            const delBtn = e.target.closest('[data-del-acc]');
+            if (delBtn) {
+                e.preventDefault();
+                e.stopPropagation();
+                const idEl = document.getElementById('delAccId');
+                const codeEl = document.getElementById('delBankCode');
+                const nameEl = document.getElementById('delBankName');
+                const noEl = document.getElementById('delBankNo');
+                const holderEl = document.getElementById('delBankHolder');
+                const balEl = document.getElementById('delBankBal');
+                const apiPathEl = document.getElementById('delBankApiPath');
+                const accIdVal = delBtn.dataset.delAcc || '';
+                if (idEl) idEl.value = accIdVal;
+                if (apiPathEl) apiPathEl.textContent = 'DELETE /api/integrations/accounts/' + accIdVal + ' (ID #' + accIdVal + ')';
+                if (codeEl) codeEl.textContent = (delBtn.dataset.delCode || 'BANK') + ' #' + accIdVal;
+                if (nameEl) nameEl.textContent = delBtn.dataset.delBank || 'Ngân hàng';
+                if (noEl) noEl.textContent = 'STK: ' + (delBtn.dataset.delNo || '');
+                if (holderEl) holderEl.textContent = delBtn.dataset.delHolder || '';
+                if (balEl) balEl.textContent = delBtn.dataset.delBal || '0 ₫';
+                const modal = document.getElementById('deleteBankModal');
+                if (modal && window.CF && typeof window.CF.openModal === 'function') {
+                    window.CF.openModal(modal);
+                } else if (modal) {
+                    modal.classList.add('open');
+                }
                 return;
             }
             const b = e.target.closest('[data-retry]');

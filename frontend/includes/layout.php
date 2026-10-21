@@ -12,6 +12,7 @@ const NAV_ITEMS = [
     'assets'       => ['assets.php',       'fa-vault',            'Tài sản & Vay'],
     'analytics'    => ['analytics.php',    'fa-chart-line',       'Phân tích'],
     'banking'      => ['banking.php',      'fa-building-columns', 'Ngân hàng'],
+    'users'        => ['users.php',        'fa-user-shield',      'Hồ sơ & IAM'],
 ];
 
 function renderHead(string $title, string $bodyClass = ''): void
@@ -84,16 +85,18 @@ function renderHeader(string $title, string $active): void
 
             <!-- User Menu -->
             <div class="user-profile-menu">
-                <div class="nav-avatar" aria-hidden="true">
-                    <span class="nav-avatar-inner"><?= e(initials($name)) ?></span>
-                    <span class="nav-avatar-status"></span>
-                </div>
-                <div class="user-info">
-                    <span class="user-name" title="<?= e($name) ?>"><?= e($name) ?></span>
-                    <span class="user-role-badge">
-                        <?= strtoupper($user['role'] ?? '') === 'ADMIN' ? 'Quản trị viên' : 'Thành viên' ?>
-                    </span>
-                </div>
+                <a href="users.php" class="user-profile-link" title="Quản lý hồ sơ cá nhân & phân quyền người dùng" style="display:flex;align-items:center;gap:0.65rem;text-decoration:none;color:inherit">
+                    <div class="nav-avatar" aria-hidden="true">
+                        <span class="nav-avatar-inner"><?= e(initials($name)) ?></span>
+                        <span class="nav-avatar-status"></span>
+                    </div>
+                    <div class="user-info">
+                        <span class="user-name" title="<?= e($name) ?>"><?= e($name) ?></span>
+                        <span class="user-role-badge">
+                            <?= strtoupper($user['role'] ?? '') === 'ADMIN' ? 'Quản trị viên' : 'Thành viên' ?>
+                        </span>
+                    </div>
+                </a>
                 <a href="logout.php" class="logout-btn" title="Đăng xuất khỏi hệ thống" aria-label="Đăng xuất">
                     <i class="fa-solid fa-arrow-right-from-bracket"></i>
                 </a>

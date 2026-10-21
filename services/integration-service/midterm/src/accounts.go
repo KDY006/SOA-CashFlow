@@ -93,6 +93,38 @@ func (s *Server) handleGetAccount(w http.ResponseWriter, r *http.Request) {
 	ok(w, http.StatusOK, "lấy thông tin tài khoản thành công", a)
 }
 
+// DELETE /api/integrations/accounts/{id}
+func (s *Server) handleDeleteAccount(w http.ResponseWriter, r *http.Request) {
+	id, valid := pathID(r)
+	if !valid {
+		fail(w, http.StatusBadRequest, "INVALID_ID", "id tài khoản không hợp lệ")
+		return
+	}
+	a, err := s.getAccount(r.Context(), id)
+	if errors.Is(err, sql.ErrNoRows) || (err == nil && forbiddenFor(r, a.UserID)) {
+		fail(w, http.StatusNotFound, "NOT_FOUND", "không tìm thấy tài khoản liên kết")
+		return
+	}
+	if err != nil {
+		s.internalError(w, err)
+		return
+	}
+
+	unlock := s.locker.Lock(a.BankCode + ":" + a.AccountNo)
+	defer unlock()
+
+	res, err := s.db.ExecContext(r.Context(), "DELETE FROM linked_accounts WHERE id = ?", id)
+	if err != nil {
+		s.internalError(w, err)
+		return
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		fail(w, http.StatusNotFound, "NOT_FOUND", "không tìm thấy tài khoản liên kết")
+		return
+	}
+	ok(w, http.StatusOK, "huỷ liên kết tài khoản ngân hàng thành công", a)
+}
+
 var (
 	bankCodeRe  = regexp.MustCompile(`^[A-Z0-9]{2,20}$`)
 	accountNoRe = regexp.MustCompile(`^[0-9]{6,30}$`)
@@ -114,7 +146,8 @@ func (s *Server) handleCreateAccount(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// đi qua gateway thì luôn liên kết cho chính user đang đăng nhập, bỏ qua user_id trong body
-	if uid := authUserID(r); uid > 0 {
+	// (ADMIN được liên kết hộ user khác nếu truyền user_id trong body)
+	if uid := authUserID(r); uid > 0 && !(isAdmin(r) && req.UserID > 0) {
 		req.UserID = uid
 	}
 	req.BankCode = strings.ToUpper(strings.TrimSpace(req.BankCode))

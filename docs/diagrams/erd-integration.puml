@@ -1,0 +1,127 @@
+@startuml
+' ================================================================
+' ERD — Integration Service (Go)
+' Database: integration_db (MySQL 8.0)
+' Doi chieu voi: db/init-integration-db.sql
+' ================================================================
+skinparam backgroundColor #FFFFFF
+skinparam shadowing false
+skinparam defaultFontName "Segoe UI"
+skinparam defaultFontSize 13
+skinparam linetype ortho
+
+!define TABLE(x) entity x << (T,#5266AD) >>
+!define PK(x) <b><color:#B91C1C>x</color></b>
+!define FK(x) <color:#1D4ED8>x</color>
+!define UK(x) <u>x</u>
+!define IDX(x) <i>x</i>
+
+title ERD — Integration Service (integration_db)\nMySQL 8.0 | InnoDB | utf8mb4
+
+TABLE(linked_accounts) {
+  PK(id) : BIGINT AUTO_INCREMENT
+  --
+  IDX(user_id) : BIGINT NOT NULL
+  UK(bank_code) : VARCHAR(20) NOT NULL
+  UK(account_no) : VARCHAR(30) NOT NULL
+  holder_name : VARCHAR(100) NOT NULL
+  balance : DECIMAL(18,2) NOT NULL DEFAULT 0
+  version : BIGINT NOT NULL DEFAULT 0
+  created_at : TIMESTAMP
+  updated_at : TIMESTAMP
+  --
+  UNIQUE (bank_code, account_no)
+  CHECK (balance >= 0)
+  INDEX idx_linked_user (user_id)
+}
+
+TABLE(bank_transactions) {
+  PK(id) : BIGINT AUTO_INCREMENT
+  --
+  FK(account_id) : BIGINT NOT NULL
+  provider : VARCHAR(20) NOT NULL
+  external_ref : VARCHAR(100) NOT NULL
+  UK(idempotency_key) : VARCHAR(150) NOT NULL
+  request_hash : CHAR(64) NOT NULL
+  direction : ENUM('CREDIT','DEBIT') NOT NULL
+  amount : DECIMAL(18,2) NOT NULL
+  balance_after : DECIMAL(18,2) NOT NULL
+  category : VARCHAR(100) DEFAULT ''
+  description : VARCHAR(255) DEFAULT ''
+  occurred_at : DATETIME NOT NULL
+  status : ENUM('RECEIVED','SYNCING',\n  'SYNCED','FAILED','REJECTED')
+  transaction_ref : BIGINT NULL
+  sync_attempts : INT DEFAULT 0
+  last_error : VARCHAR(255) NULL
+  created_at : TIMESTAMP
+  updated_at : TIMESTAMP
+  --
+  UNIQUE (idempotency_key)
+  UNIQUE (provider, external_ref)
+  FK account_id -> linked_accounts(id) CASCADE
+  CHECK (amount > 0)
+  INDEX (account_id, occurred_at)
+  INDEX (status, updated_at)
+}
+
+TABLE(exchange_rates) {
+  PK(id) : INT AUTO_INCREMENT
+  --
+  UK(currency_code) : VARCHAR(10) NOT NULL
+  rate_to_vnd : DECIMAL(15,4) NOT NULL
+  updated_at : TIMESTAMP
+  --
+  UNIQUE (currency_code)
+  CHECK (rate_to_vnd > 0)
+}
+
+TABLE(external_webhooks) {
+  PK(id) : BIGINT AUTO_INCREMENT
+  --
+  IDX(provider_name) : VARCHAR(50) NOT NULL
+  event_type : VARCHAR(50) NOT NULL
+  payload : JSON
+  received_at : TIMESTAMP
+  --
+  INDEX (provider_name, received_at)
+}
+
+' === RELATIONSHIPS ===
+linked_accounts ||--o{ bank_transactions : "1 tai khoan\nco nhieu bien dong"
+
+' === CROSS-SERVICE REFERENCES (logic only) ===
+note right of linked_accounts
+  <b>user_id</b> tham chieu logic
+  sang <b>auth-service → users.id</b>
+  (khong dat khoa ngoai cung
+  vi khac database)
+end note
+
+note right of bank_transactions
+  <b>transaction_ref</b> tham chieu logic
+  sang <b>transaction-service → transactions.id</b>
+  (co gia tri khi status = SYNCED)
+end note
+
+note bottom of exchange_rates
+  Bang doc lap, khong co khoa ngoai.
+  Du lieu dong bo dinh ky tu
+  VCB / TCB / BIDV (gia lap).
+end note
+
+note bottom of external_webhooks
+  Log tho moi lan ngan hang goi vao
+  (ke ca bi trung) de doi soat.
+  Bang doc lap, khong co khoa ngoai.
+end note
+
+legend bottom
+  |= Ky hieu |= Y nghia |
+  | <b><color:#B91C1C>PK</color></b> | Primary Key |
+  | <color:#1D4ED8>FK</color> | Foreign Key |
+  | <u>UK</u> | Unique Key |
+  | <i>IDX</i> | Indexed column |
+  | Duong lien | Quan he khoa ngoai that su trong DB |
+  | Note | Tham chieu logic sang service khac |
+endlegend
+@enduml

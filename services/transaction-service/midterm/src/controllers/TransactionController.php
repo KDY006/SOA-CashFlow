@@ -5,6 +5,7 @@ use App\Models\Transaction;
 use App\Models\Budget;
 use App\Models\Category;
 use App\Helpers\Response;
+use App\Helpers\Auth;
 
 class TransactionController {
     private Transaction $transactionModel;
@@ -19,19 +20,10 @@ class TransactionController {
 
     /**
      * Lấy user_id từ request
+     * Ưu tiên header X-User-Id (gateway); chỉ ADMIN hoặc lời gọi trực tiếp không có header mới dùng user_id gửi lên
      */
     private function resolveUserId(?array $body = null): int {
-        if (!empty($_GET['user_id'])) {
-            return (int) $_GET['user_id'];
-        }
-        if ($body && !empty($body['user_id'])) {
-            return (int) $body['user_id'];
-        }
-        $headerUserId = $_SERVER['HTTP_X_USER_ID'] ?? null;
-        if ($headerUserId) {
-            return (int) $headerUserId;
-        }
-        return 1;
+        return Auth::resolveUserId($body);
     }
 
     /**
@@ -39,7 +31,8 @@ class TransactionController {
      */
     public function index(): void {
         $filters = [
-            'user_id'     => $_GET['user_id'] ?? null,
+            // Luôn lọc theo user hiệu lực (USER thường không xem được dữ liệu người khác bằng ?user_id=)
+            'user_id'     => $this->resolveUserId(),
             'type'        => $_GET['type'] ?? null,
             'category_id' => $_GET['category_id'] ?? null,
             'from_date'   => $_GET['from_date'] ?? null,
@@ -47,11 +40,6 @@ class TransactionController {
             'limit'       => $_GET['limit'] ?? 100,
             'offset'      => $_GET['offset'] ?? 0
         ];
-
-        // Nếu có X-User-Id mà không có query user_id thì lấy từ header
-        if (empty($filters['user_id']) && !empty($_SERVER['HTTP_X_USER_ID'])) {
-            $filters['user_id'] = (int) $_SERVER['HTTP_X_USER_ID'];
-        }
 
         $transactions = $this->transactionModel->getAll($filters);
         Response::success($transactions, 'Lấy danh sách giao dịch thành công');
@@ -62,7 +50,7 @@ class TransactionController {
      */
     public function show(int $id): void {
         $transaction = $this->transactionModel->getById($id);
-        if (!$transaction) {
+        if (!$transaction || Auth::forbiddenFor((int) $transaction['user_id'])) {
             Response::error('Không tìm thấy giao dịch với ID này', 404);
         }
         Response::success($transaction, 'Lấy chi tiết giao dịch thành công');
@@ -177,13 +165,18 @@ class TransactionController {
      */
     public function update(int $id): void {
         $transaction = $this->transactionModel->getById($id);
-        if (!$transaction) {
+        if (!$transaction || Auth::forbiddenFor((int) $transaction['user_id'])) {
             Response::error('Không tìm thấy giao dịch để cập nhật', 404);
         }
 
         $body = json_decode(file_get_contents('php://input'), true);
         if (empty($body)) {
             Response::error('Dữ liệu cập nhật không hợp lệ', 400);
+        }
+
+        // USER thường không được chuyển giao dịch sang người khác
+        if (Auth::headerUserId() > 0 && !Auth::isAdmin()) {
+            unset($body['user_id']);
         }
 
         $this->transactionModel->update($id, $body);
@@ -196,7 +189,7 @@ class TransactionController {
      */
     public function delete(int $id): void {
         $transaction = $this->transactionModel->getById($id);
-        if (!$transaction) {
+        if (!$transaction || Auth::forbiddenFor((int) $transaction['user_id'])) {
             Response::error('Không tìm thấy giao dịch để xóa', 404);
         }
 

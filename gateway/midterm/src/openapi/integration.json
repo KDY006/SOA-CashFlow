@@ -1,0 +1,2076 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "Integration Service (Go)",
+    "version": "1.0.0-midterm",
+    "description": "Integration Service viết bằng **Go (net/http thuần, Go 1.22+ ServeMux)**, chạy nội bộ ở cổng **8085**, truy cập qua API Gateway (:8080) với prefix `/api/integrations`.\n\nChức năng: liên kết tài khoản ngân hàng, nhận webhook biến động số dư (idempotent, chống race condition bằng mutex theo tài khoản + `SELECT ... FOR UPDATE`), đồng bộ giao dịch sang transaction-service (PHP) ở background, đồng bộ tỷ giá song song từ nhiều ngân hàng giả lập, và endpoint giả lập tải để chứng minh tính nhất quán.\n\n- Gateway giải mã JWT và gắn `X-User-Id`; khi có header này service chỉ trả dữ liệu của chính user đó (dữ liệu người khác trả **404**).\n- Số tiền (`amount`, `balance`, ...) trả về dạng số có 2 chữ số thập phân (lưu nội bộ theo 1/100 đồng).\n- Lỗi luôn có dạng `{ \"success\": false, \"error\": \"<CODE>\", \"message\": \"...\" }`.\n- `GET /health` của service không đi qua Gateway được (Gateway tự trả `/health` của nó)."
+  },
+  "servers": [
+    {
+      "url": "/",
+      "description": "Qua API Gateway"
+    }
+  ],
+  "tags": [
+    {
+      "name": "Tỷ giá",
+      "description": "Tra cứu & đồng bộ tỷ giá ngoại tệ"
+    },
+    {
+      "name": "Tài khoản liên kết",
+      "description": "Liên kết tài khoản ngân hàng & lịch sử biến động"
+    },
+    {
+      "name": "Webhook ngân hàng",
+      "description": "Nhận biến động số dư từ ngân hàng, theo dõi & đồng bộ lại"
+    },
+    {
+      "name": "Giả lập",
+      "description": "Giả lập tải đồng thời để kiểm tra race condition / idempotency"
+    }
+  ],
+  "security": [
+    {
+      "bearerAuth": []
+    }
+  ],
+  "paths": {
+    "/api/integrations/rates": {
+      "get": {
+        "tags": [
+          "Tỷ giá"
+        ],
+        "operationId": "getRates",
+        "summary": "Lấy danh sách tỷ giá ngoại tệ (công khai)",
+        "description": "Endpoint công khai, không cần JWT. Lọc theo `currency` (không phân biệt hoa thường). Nếu lọc mà không có dữ liệu thì trả 404.",
+        "security": [],
+        "parameters": [
+          {
+            "name": "currency",
+            "in": "query",
+            "required": false,
+            "description": "Mã tiền tệ, vd USD, EUR, GBP, JPY, SGD, CNY",
+            "schema": {
+              "type": "string"
+            },
+            "example": "USD"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Danh sách tỷ giá",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RatesResponse"
+                },
+                "example": {
+                  "success": true,
+                  "message": "lấy tỷ giá thành công",
+                  "data": [
+                    {
+                      "currency_code": "EUR",
+                      "rate_to_vnd": 27615.1234,
+                      "updated_at": "2026-10-20T09:00:00+07:00"
+                    },
+                    {
+                      "currency_code": "USD",
+                      "rate_to_vnd": 25412.5,
+                      "updated_at": "2026-10-20T09:00:00+07:00"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Không có tỷ giá cho loại tiền yêu cầu",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IntegrationError"
+                },
+                "example": {
+                  "success": false,
+                  "error": "NOT_FOUND",
+                  "message": "không có tỷ giá cho loại tiền này"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Lỗi hệ thống",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IntegrationError"
+                },
+                "example": {
+                  "success": false,
+                  "error": "INTERNAL_ERROR",
+                  "message": "lỗi hệ thống, vui lòng thử lại"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/integrations/sync-rates": {
+      "post": {
+        "tags": [
+          "Tỷ giá"
+        ],
+        "operationId": "syncRates",
+        "summary": "Đồng bộ tỷ giá song song từ nhiều ngân hàng",
+        "description": "Gọi song song (goroutine) 3 nhà cung cấp giả lập VCB, TCB, BIDV với timeout 1.2s; lấy trung bình các ngân hàng phản hồi kịp rồi upsert vào DB. Không cần request body.",
+        "responses": {
+          "200": {
+            "description": "Đồng bộ thành công",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SyncRatesResponse"
+                },
+                "example": {
+                  "success": true,
+                  "message": "đồng bộ tỷ giá thành công",
+                  "data": {
+                    "providers_ok": 2,
+                    "providers": [
+                      {
+                        "provider": "BIDV",
+                        "latency_ms": 1200,
+                        "error": "quá thời gian chờ"
+                      },
+                      {
+                        "provider": "TCB",
+                        "latency_ms": 412
+                      },
+                      {
+                        "provider": "VCB",
+                        "latency_ms": 873
+                      }
+                    ],
+                    "rates": [
+                      {
+                        "currency_code": "CNY",
+                        "rate_to_vnd": 3517.2,
+                        "updated_at": "2026-10-20T14:35:00+07:00"
+                      },
+                      {
+                        "currency_code": "EUR",
+                        "rate_to_vnd": 27630.4512,
+                        "updated_at": "2026-10-20T14:35:00+07:00"
+                      },
+                      {
+                        "currency_code": "GBP",
+                        "rate_to_vnd": 32291.08,
+                        "updated_at": "2026-10-20T14:35:00+07:00"
+                      },
+                      {
+                        "currency_code": "JPY",
+                        "rate_to_vnd": 168.5123,
+                        "updated_at": "2026-10-20T14:35:00+07:00"
+                      },
+                      {
+                        "currency_code": "SGD",
+                        "rate_to_vnd": 18911.77,
+                        "updated_at": "2026-10-20T14:35:00+07:00"
+                      },
+                      {
+                        "currency_code": "USD",
+                        "rate_to_vnd": 25398.6,
+                        "updated_at": "2026-10-20T14:35:00+07:00"
+                      }
+                    ]
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Thiếu hoặc sai JWT (do Gateway trả về)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IntegrationError"
+                },
+                "example": {
+                  "success": false,
+                  "error": "UNAUTHORIZED",
+                  "message": "Yêu cầu token xác thực (Authorization: Bearer <token>) để truy cập endpoint này."
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Lỗi hệ thống",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IntegrationError"
+                },
+                "example": {
+                  "success": false,
+                  "error": "INTERNAL_ERROR",
+                  "message": "lỗi hệ thống, vui lòng thử lại"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Không ngân hàng nào phản hồi kịp, giữ nguyên tỷ giá cũ",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProvidersUnavailable"
+                },
+                "example": {
+                  "success": false,
+                  "error": "PROVIDERS_UNAVAILABLE",
+                  "message": "không ngân hàng nào phản hồi kịp, giữ nguyên tỷ giá cũ",
+                  "providers": [
+                    {
+                      "provider": "BIDV",
+                      "latency_ms": 1200,
+                      "error": "quá thời gian chờ"
+                    },
+                    {
+                      "provider": "TCB",
+                      "latency_ms": 1200,
+                      "error": "quá thời gian chờ"
+                    },
+                    {
+                      "provider": "VCB",
+                      "latency_ms": 1200,
+                      "error": "quá thời gian chờ"
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/integrations/accounts": {
+      "get": {
+        "tags": [
+          "Tài khoản liên kết"
+        ],
+        "operationId": "listAccounts",
+        "summary": "Danh sách tài khoản ngân hàng đã liên kết của user",
+        "description": "Qua Gateway luôn lọc theo user trong JWT (`X-User-Id`); query `user_id` chỉ có tác dụng khi gọi thẳng service không qua Gateway.",
+        "parameters": [
+          {
+            "name": "user_id",
+            "in": "query",
+            "required": false,
+            "description": "**Chỉ ADMIN dùng được** — xem dữ liệu của user khác (vd 1, 2, 3...). Tài khoản USER thường: tham số này bị bỏ qua, luôn trả dữ liệu của chính mình (lấy userId từ JWT). Bỏ trống = dữ liệu của user đang đăng nhập.",
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Danh sách tài khoản",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AccountListResponse"
+                },
+                "example": {
+                  "success": true,
+                  "message": "lấy danh sách tài khoản liên kết thành công",
+                  "data": [
+                    {
+                      "id": 1,
+                      "user_id": 1,
+                      "bank_code": "VCB",
+                      "account_no": "0011001234567",
+                      "holder_name": "NGUYEN VAN A",
+                      "balance": 15250000,
+                      "version": 12,
+                      "created_at": "2026-10-01T08:00:00+07:00",
+                      "updated_at": "2026-10-20T14:30:05+07:00"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Thiếu hoặc sai JWT (do Gateway trả về)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IntegrationError"
+                },
+                "example": {
+                  "success": false,
+                  "error": "UNAUTHORIZED",
+                  "message": "Yêu cầu token xác thực (Authorization: Bearer <token>) để truy cập endpoint này."
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Lỗi hệ thống",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IntegrationError"
+                },
+                "example": {
+                  "success": false,
+                  "error": "INTERNAL_ERROR",
+                  "message": "lỗi hệ thống, vui lòng thử lại"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Tài khoản liên kết"
+        ],
+        "operationId": "createAccount",
+        "summary": "Liên kết tài khoản ngân hàng mới",
+        "description": "Qua Gateway luôn liên kết cho user đang đăng nhập (bỏ qua `user_id` trong body). `bank_code` và `holder_name` được tự chuyển in hoa.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateAccountRequest"
+              },
+              "example": {
+                "bank_code": "VCB",
+                "account_no": "0011001234567",
+                "holder_name": "Nguyen Van A",
+                "initial_balance": 15000000
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Liên kết thành công",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AccountResponse"
+                },
+                "example": {
+                  "success": true,
+                  "message": "liên kết tài khoản thành công",
+                  "data": {
+                    "id": 1,
+                    "user_id": 1,
+                    "bank_code": "VCB",
+                    "account_no": "0011001234567",
+                    "holder_name": "NGUYEN VAN A",
+                    "balance": 15000000,
+                    "version": 0,
+                    "created_at": "2026-10-01T08:00:00+07:00",
+                    "updated_at": "2026-10-01T08:00:00+07:00"
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Body rỗng / JSON sai",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IntegrationError"
+                },
+                "example": {
+                  "success": false,
+                  "error": "BAD_REQUEST",
+                  "message": "json không hợp lệ: unexpected end of JSON input"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Thiếu hoặc sai JWT (do Gateway trả về)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IntegrationError"
+                },
+                "example": {
+                  "success": false,
+                  "error": "UNAUTHORIZED",
+                  "message": "Yêu cầu token xác thực (Authorization: Bearer <token>) để truy cập endpoint này."
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Tài khoản (bank_code + account_no) đã được liên kết",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IntegrationError"
+                },
+                "example": {
+                  "success": false,
+                  "error": "ACCOUNT_EXISTS",
+                  "message": "tài khoản này đã được liên kết"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Dữ liệu không hợp lệ",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IntegrationError"
+                },
+                "example": {
+                  "success": false,
+                  "error": "VALIDATION_ERROR",
+                  "message": "account_no chỉ gồm số, 6-30 ký tự"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Lỗi hệ thống",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IntegrationError"
+                },
+                "example": {
+                  "success": false,
+                  "error": "INTERNAL_ERROR",
+                  "message": "lỗi hệ thống, vui lòng thử lại"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/integrations/accounts/{id}": {
+      "get": {
+        "tags": [
+          "Tài khoản liên kết"
+        ],
+        "operationId": "getAccount",
+        "summary": "Chi tiết một tài khoản liên kết",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "ID tài khoản liên kết",
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 1
+            },
+            "example": 1
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Thông tin tài khoản",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AccountResponse"
+                },
+                "example": {
+                  "success": true,
+                  "message": "lấy thông tin tài khoản thành công",
+                  "data": {
+                    "id": 1,
+                    "user_id": 1,
+                    "bank_code": "VCB",
+                    "account_no": "0011001234567",
+                    "holder_name": "NGUYEN VAN A",
+                    "balance": 15250000,
+                    "version": 12,
+                    "created_at": "2026-10-01T08:00:00+07:00",
+                    "updated_at": "2026-10-20T14:30:05+07:00"
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "ID không hợp lệ",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IntegrationError"
+                },
+                "example": {
+                  "success": false,
+                  "error": "INVALID_ID",
+                  "message": "id tài khoản không hợp lệ"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Thiếu hoặc sai JWT (do Gateway trả về)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IntegrationError"
+                },
+                "example": {
+                  "success": false,
+                  "error": "UNAUTHORIZED",
+                  "message": "Yêu cầu token xác thực (Authorization: Bearer <token>) để truy cập endpoint này."
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Không tồn tại hoặc không thuộc user hiện tại",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IntegrationError"
+                },
+                "example": {
+                  "success": false,
+                  "error": "NOT_FOUND",
+                  "message": "không tìm thấy tài khoản liên kết"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Lỗi hệ thống",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IntegrationError"
+                },
+                "example": {
+                  "success": false,
+                  "error": "INTERNAL_ERROR",
+                  "message": "lỗi hệ thống, vui lòng thử lại"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Tài khoản liên kết"
+        ],
+        "operationId": "deleteAccount",
+        "summary": "Huỷ liên kết (xoá) tài khoản ngân hàng hiện tại",
+        "description": "Xoá tài khoản ngân hàng đã liên kết theo `id` (kèm khoá đồng thời theo `bank_code:account_no` và tự động xoá cascade các biến động `bank_transactions` thuộc tài khoản đó trong `integration_db`).\n\n- **USER thường**: chỉ xoá được tài khoản thuộc sở hữu của chính mình (tài khoản của người khác trả `404 NOT_FOUND`).\n- **ADMIN**: có thể xoá tài khoản liên kết bất kỳ.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "ID tài khoản liên kết cần xoá",
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 1
+            },
+            "example": 1
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Huỷ liên kết tài khoản thành công, trả về thông tin tài khoản vừa xoá",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AccountResponse"
+                },
+                "example": {
+                  "success": true,
+                  "message": "huỷ liên kết tài khoản ngân hàng thành công",
+                  "data": {
+                    "id": 7,
+                    "user_id": 1,
+                    "bank_code": "TCB",
+                    "account_no": "9817661846",
+                    "holder_name": "NGUYEN VAN A",
+                    "balance": 5000000,
+                    "version": 1,
+                    "created_at": "2026-10-21T01:13:06+07:00",
+                    "updated_at": "2026-10-21T01:13:09+07:00"
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "ID tài khoản không hợp lệ",
+            "content": {
+              "application/json": {
+                "example": {
+                  "success": false,
+                  "error": "INVALID_ID",
+                  "message": "id tài khoản không hợp lệ"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Thiếu hoặc sai JWT",
+            "content": {
+              "application/json": {
+                "example": {
+                  "success": false,
+                  "error": "UNAUTHORIZED",
+                  "message": "Yêu cầu token xác thực (Authorization: Bearer <token>) để truy cập endpoint này."
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Không tìm thấy tài khoản liên kết (hoặc không thuộc quyền sở hữu của user)",
+            "content": {
+              "application/json": {
+                "example": {
+                  "success": false,
+                  "error": "NOT_FOUND",
+                  "message": "không tìm thấy tài khoản liên kết"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/integrations/accounts/{id}/transactions": {
+      "get": {
+        "tags": [
+          "Tài khoản liên kết"
+        ],
+        "operationId": "listAccountTransactions",
+        "summary": "Lịch sử biến động số dư của tài khoản",
+        "description": "Sắp xếp theo `occurred_at` giảm dần.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "ID tài khoản liên kết",
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 1
+            },
+            "example": 1
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "description": "Lọc theo trạng thái (không phân biệt hoa thường)",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "RECEIVED",
+                "SYNCING",
+                "SYNCED",
+                "FAILED",
+                "REJECTED"
+              ]
+            },
+            "example": "SYNCED"
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "description": "Số bản ghi tối đa (1-200, mặc định 50; giá trị ngoài khoảng dùng mặc định)",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 200,
+              "default": 50
+            },
+            "example": 20
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Danh sách biến động",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BankTransactionListResponse"
+                },
+                "example": {
+                  "success": true,
+                  "message": "lấy lịch sử biến động thành công",
+                  "data": [
+                    {
+                      "id": 101,
+                      "account_id": 1,
+                      "provider": "VCB",
+                      "external_ref": "FT26293001234",
+                      "idempotency_key": "VCB:FT26293001234",
+                      "direction": "CREDIT",
+                      "amount": 1500000,
+                      "balance_after": 16750000,
+                      "category": "Lương",
+                      "description": "Chuyen tien luong thang 10",
+                      "occurred_at": "2026-10-20T14:30:00+07:00",
+                      "status": "SYNCED",
+                      "transaction_ref": 245,
+                      "sync_attempts": 1,
+                      "created_at": "2026-10-20T14:30:01+07:00"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "ID hoặc status không hợp lệ",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IntegrationError"
+                },
+                "examples": {
+                  "invalidId": {
+                    "value": {
+                      "success": false,
+                      "error": "INVALID_ID",
+                      "message": "id tài khoản không hợp lệ"
+                    }
+                  },
+                  "invalidStatus": {
+                    "value": {
+                      "success": false,
+                      "error": "INVALID_STATUS",
+                      "message": "status không hợp lệ"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Thiếu hoặc sai JWT (do Gateway trả về)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IntegrationError"
+                },
+                "example": {
+                  "success": false,
+                  "error": "UNAUTHORIZED",
+                  "message": "Yêu cầu token xác thực (Authorization: Bearer <token>) để truy cập endpoint này."
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Không tồn tại hoặc không thuộc user hiện tại",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IntegrationError"
+                },
+                "example": {
+                  "success": false,
+                  "error": "NOT_FOUND",
+                  "message": "không tìm thấy tài khoản liên kết"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Lỗi hệ thống",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IntegrationError"
+                },
+                "example": {
+                  "success": false,
+                  "error": "INTERNAL_ERROR",
+                  "message": "lỗi hệ thống, vui lòng thử lại"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/integrations/webhooks/banking": {
+      "post": {
+        "tags": [
+          "Webhook ngân hàng"
+        ],
+        "operationId": "bankWebhook",
+        "summary": "Nhận webhook biến động số dư từ ngân hàng",
+        "description": "Ghi nhận 1 biến động số dư (CREDIT cộng / DEBIT trừ) vào tài khoản liên kết khớp `bank_code` + `account_no`, rồi đẩy sang transaction-service ở background.\n\n- **Idempotent**: key = header `Idempotency-Key`, nếu không có thì dùng `provider:external_ref`. Gửi lại đúng nội dung → 200 `duplicate: true`; dùng lại key cho nội dung khác → 409.\n- DEBIT vượt số dư → giao dịch vẫn được lưu với trạng thái `REJECTED` và trả **422** (`success: false`).\n- Nếu service cấu hình `WEBHOOK_SECRET` thì bắt buộc header `X-Signature` = hex(HMAC-SHA256(raw body, secret)); để trống thì bỏ qua kiểm tra (mặc định khi demo).\n- Qua Gateway endpoint này vẫn yêu cầu JWT (không nằm trong danh sách public).\n- Giao dịch ≥ `LARGE_AMOUNT_ALERT` (mặc định 10.000.000đ) sẽ phát thông báo `LARGE_TRANSACTION` sang notification-service.",
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": false,
+            "description": "Khóa chống xử lý trùng (tối đa 150 ký tự). Mặc định = provider:external_ref",
+            "schema": {
+              "type": "string",
+              "maxLength": 150
+            },
+            "example": "VCB:FT26293001234"
+          },
+          {
+            "name": "X-Signature",
+            "in": "header",
+            "required": false,
+            "description": "Chữ ký hex HMAC-SHA256 của raw body. Chỉ bắt buộc khi service đặt WEBHOOK_SECRET.",
+            "schema": {
+              "type": "string"
+            },
+            "example": "3f1c9a0e5b7d..."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WebhookRequest"
+              },
+              "examples": {
+                "credit": {
+                  "summary": "Tiền vào (CREDIT)",
+                  "value": {
+                    "provider": "VCB",
+                    "external_ref": "FT26293001234",
+                    "bank_code": "VCB",
+                    "account_no": "0011001234567",
+                    "direction": "CREDIT",
+                    "amount": 1500000,
+                    "category": "Lương",
+                    "description": "Chuyen tien luong thang 10",
+                    "occurred_at": "2026-10-20 14:30:00"
+                  }
+                },
+                "debit": {
+                  "summary": "Tiền ra (DEBIT)",
+                  "value": {
+                    "provider": "VCB",
+                    "external_ref": "FT26293005678",
+                    "account_no": "0011001234567",
+                    "direction": "DEBIT",
+                    "amount": 250000,
+                    "category": "Ăn uống",
+                    "description": "Thanh toan QR quan an"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Giao dịch đã được ghi nhận trước đó (trùng), bỏ qua",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WebhookResponse"
+                },
+                "example": {
+                  "success": true,
+                  "message": "giao dịch đã được ghi nhận trước đó, bỏ qua",
+                  "data": {
+                    "duplicate": true,
+                    "transaction": {
+                      "id": 101,
+                      "account_id": 1,
+                      "provider": "VCB",
+                      "external_ref": "FT26293001234",
+                      "idempotency_key": "VCB:FT26293001234",
+                      "direction": "CREDIT",
+                      "amount": 1500000,
+                      "balance_after": 16750000,
+                      "category": "Lương",
+                      "description": "Chuyen tien luong thang 10",
+                      "occurred_at": "2026-10-20T14:30:00+07:00",
+                      "status": "SYNCED",
+                      "transaction_ref": 245,
+                      "sync_attempts": 1,
+                      "created_at": "2026-10-20T14:30:01+07:00"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Ghi nhận mới thành công",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WebhookResponse"
+                },
+                "example": {
+                  "success": true,
+                  "message": "ghi nhận biến động số dư thành công",
+                  "data": {
+                    "duplicate": false,
+                    "transaction": {
+                      "id": 101,
+                      "account_id": 1,
+                      "provider": "VCB",
+                      "external_ref": "FT26293001234",
+                      "idempotency_key": "VCB:FT26293001234",
+                      "direction": "CREDIT",
+                      "amount": 1500000,
+                      "balance_after": 16750000,
+                      "category": "Lương",
+                      "description": "Chuyen tien luong thang 10",
+                      "occurred_at": "2026-10-20T14:30:00+07:00",
+                      "status": "RECEIVED",
+                      "transaction_ref": null,
+                      "sync_attempts": 0,
+                      "created_at": "2026-10-20T14:30:01+07:00"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Không đọc được body / JSON sai",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IntegrationError"
+                },
+                "example": {
+                  "success": false,
+                  "error": "BAD_REQUEST",
+                  "message": "json không hợp lệ"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Sai chữ ký webhook (service) hoặc thiếu JWT (Gateway)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IntegrationError"
+                },
+                "examples": {
+                  "invalidSignature": {
+                    "value": {
+                      "success": false,
+                      "error": "INVALID_SIGNATURE",
+                      "message": "chữ ký webhook không hợp lệ"
+                    }
+                  },
+                  "unauthorized": {
+                    "value": {
+                      "success": false,
+                      "error": "UNAUTHORIZED",
+                      "message": "Yêu cầu token xác thực (Authorization: Bearer <token>) để truy cập endpoint này."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Không tìm thấy tài khoản liên kết khớp bank_code + account_no",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IntegrationError"
+                },
+                "example": {
+                  "success": false,
+                  "error": "ACCOUNT_NOT_FOUND",
+                  "message": "không tìm thấy tài khoản liên kết"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Idempotency-Key đã dùng cho giao dịch có nội dung khác",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IntegrationError"
+                },
+                "example": {
+                  "success": false,
+                  "error": "IDEMPOTENCY_CONFLICT",
+                  "message": "idempotency key này đã dùng cho một giao dịch khác"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Body vượt quá 1MB",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IntegrationError"
+                },
+                "example": {
+                  "success": false,
+                  "error": "PAYLOAD_TOO_LARGE",
+                  "message": "body vượt quá 1MB"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Dữ liệu không hợp lệ, hoặc DEBIT bị từ chối do số dư không đủ",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/IntegrationError"
+                    },
+                    {
+                      "$ref": "#/components/schemas/WebhookResponse"
+                    }
+                  ]
+                },
+                "examples": {
+                  "validation": {
+                    "summary": "Sai dữ liệu",
+                    "value": {
+                      "success": false,
+                      "error": "VALIDATION_ERROR",
+                      "message": "direction chỉ nhận CREDIT hoặc DEBIT"
+                    }
+                  },
+                  "rejected": {
+                    "summary": "Số dư không đủ (giao dịch lưu với status REJECTED)",
+                    "value": {
+                      "success": false,
+                      "message": "số dư không đủ, giao dịch bị từ chối",
+                      "data": {
+                        "duplicate": false,
+                        "transaction": {
+                          "id": 101,
+                          "account_id": 1,
+                          "provider": "VCB",
+                          "external_ref": "FT26293009999",
+                          "idempotency_key": "VCB:FT26293009999",
+                          "direction": "DEBIT",
+                          "amount": 99000000,
+                          "balance_after": 16750000,
+                          "category": "Lương",
+                          "description": "Chuyen tien luong thang 10",
+                          "occurred_at": "2026-10-20T14:30:00+07:00",
+                          "status": "REJECTED",
+                          "transaction_ref": null,
+                          "sync_attempts": 0,
+                          "created_at": "2026-10-20T14:30:01+07:00"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Lỗi hệ thống",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IntegrationError"
+                },
+                "example": {
+                  "success": false,
+                  "error": "INTERNAL_ERROR",
+                  "message": "lỗi hệ thống, vui lòng thử lại"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/integrations/bank-transactions/{id}": {
+      "get": {
+        "tags": [
+          "Webhook ngân hàng"
+        ],
+        "operationId": "getBankTransaction",
+        "summary": "Chi tiết một biến động số dư (bank transaction)",
+        "description": "Xem trạng thái đồng bộ (`RECEIVED` → `SYNCING` → `SYNCED`/`FAILED`, hoặc `REJECTED`), `transaction_ref` bên transaction-service và lỗi gần nhất.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "ID bank transaction",
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 1
+            },
+            "example": 1
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Chi tiết giao dịch",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BankTransactionResponse"
+                },
+                "example": {
+                  "success": true,
+                  "message": "lấy chi tiết giao dịch thành công",
+                  "data": {
+                    "id": 101,
+                    "account_id": 1,
+                    "provider": "VCB",
+                    "external_ref": "FT26293001234",
+                    "idempotency_key": "VCB:FT26293001234",
+                    "direction": "CREDIT",
+                    "amount": 1500000,
+                    "balance_after": 16750000,
+                    "category": "Lương",
+                    "description": "Chuyen tien luong thang 10",
+                    "occurred_at": "2026-10-20T14:30:00+07:00",
+                    "status": "SYNCED",
+                    "transaction_ref": 245,
+                    "sync_attempts": 1,
+                    "created_at": "2026-10-20T14:30:01+07:00"
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "ID không hợp lệ",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IntegrationError"
+                },
+                "example": {
+                  "success": false,
+                  "error": "INVALID_ID",
+                  "message": "id không hợp lệ"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Thiếu hoặc sai JWT (do Gateway trả về)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IntegrationError"
+                },
+                "example": {
+                  "success": false,
+                  "error": "UNAUTHORIZED",
+                  "message": "Yêu cầu token xác thực (Authorization: Bearer <token>) để truy cập endpoint này."
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Không tồn tại hoặc không thuộc user hiện tại",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IntegrationError"
+                },
+                "example": {
+                  "success": false,
+                  "error": "NOT_FOUND",
+                  "message": "không tìm thấy giao dịch"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Lỗi hệ thống",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IntegrationError"
+                },
+                "example": {
+                  "success": false,
+                  "error": "INTERNAL_ERROR",
+                  "message": "lỗi hệ thống, vui lòng thử lại"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/integrations/bank-transactions/{id}/retry": {
+      "post": {
+        "tags": [
+          "Webhook ngân hàng"
+        ],
+        "operationId": "retryBankTransactionSync",
+        "summary": "Đồng bộ lại thủ công giao dịch FAILED",
+        "description": "Reset `sync_attempts` về 0 và đưa giao dịch đang ở trạng thái `FAILED` vào lại hàng đợi đồng bộ sang transaction-service. Không cần request body.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "ID bank transaction",
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 1
+            },
+            "example": 1
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "Đã đưa vào hàng đợi",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RetryResponse"
+                },
+                "example": {
+                  "success": true,
+                  "message": "đã đưa giao dịch vào hàng đợi đồng bộ",
+                  "data": {
+                    "id": 101
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "ID không hợp lệ",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IntegrationError"
+                },
+                "example": {
+                  "success": false,
+                  "error": "INVALID_ID",
+                  "message": "id không hợp lệ"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Thiếu hoặc sai JWT (do Gateway trả về)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IntegrationError"
+                },
+                "example": {
+                  "success": false,
+                  "error": "UNAUTHORIZED",
+                  "message": "Yêu cầu token xác thực (Authorization: Bearer <token>) để truy cập endpoint này."
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Không tồn tại hoặc không thuộc user hiện tại",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IntegrationError"
+                },
+                "example": {
+                  "success": false,
+                  "error": "NOT_FOUND",
+                  "message": "không tìm thấy giao dịch"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Giao dịch không ở trạng thái FAILED",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IntegrationError"
+                },
+                "example": {
+                  "success": false,
+                  "error": "NOT_RETRYABLE",
+                  "message": "chỉ thử lại được giao dịch đang ở trạng thái FAILED"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Lỗi hệ thống",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IntegrationError"
+                },
+                "example": {
+                  "success": false,
+                  "error": "INTERNAL_ERROR",
+                  "message": "lỗi hệ thống, vui lòng thử lại"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/integrations/simulate": {
+      "post": {
+        "tags": [
+          "Giả lập"
+        ],
+        "operationId": "simulate",
+        "summary": "Giả lập ngân hàng bắn dồn dập webhook đồng thời",
+        "description": "Tạo `events` biến động ngẫu nhiên (10.000–499.000đ, ~40% DEBIT) vào tài khoản `account_id`, trộn thêm `duplicate_rate` × events request trùng, xử lý bằng `workers` goroutine song song; sau đó so số dư thực tế với số dư kỳ vọng.\n\n- `mode: \"safe\"` dùng mutex + transaction + FOR UPDATE → `consistent: true`.\n- `mode: \"unsafe\"` bỏ khóa/transaction để minh họa race condition (thường `consistent: false`), và không đồng bộ sang transaction-service.\n- `sync: false` → không đẩy dữ liệu giả lập sang transaction-service.\n\n⚠️ Lưu ý: endpoint **không** kiểm tra quyền sở hữu `account_id`. Số lượng lớn có thể vượt timeout 15s của Gateway (502) dù service vẫn chạy tiếp.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SimulateRequest"
+              },
+              "example": {
+                "account_id": 1,
+                "events": 50,
+                "workers": 10,
+                "duplicate_rate": 0.3,
+                "mode": "safe",
+                "sync": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Kết quả giả lập (kiểm tra trường consistent)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SimulateResponse"
+                },
+                "example": {
+                  "success": true,
+                  "message": "dữ liệu nhất quán: số dư khớp, không có giao dịch bị ghi trùng",
+                  "data": {
+                    "mode": "safe",
+                    "account_id": 1,
+                    "workers": 10,
+                    "unique_events": 50,
+                    "requests_sent": 65,
+                    "created": 47,
+                    "duplicates": 15,
+                    "rejected": 3,
+                    "errors": 0,
+                    "stored_records": 50,
+                    "balance_before": 15250000,
+                    "balance_after": 18432000,
+                    "expected_balance": 18432000,
+                    "difference": 0,
+                    "consistent": true,
+                    "elapsed_ms": 842,
+                    "ref_prefix": "SIM1792491234567890123"
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Body rỗng / JSON sai",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IntegrationError"
+                },
+                "example": {
+                  "success": false,
+                  "error": "BAD_REQUEST",
+                  "message": "body rỗng"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Thiếu hoặc sai JWT (do Gateway trả về)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IntegrationError"
+                },
+                "example": {
+                  "success": false,
+                  "error": "UNAUTHORIZED",
+                  "message": "Yêu cầu token xác thực (Authorization: Bearer <token>) để truy cập endpoint này."
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Không tìm thấy tài khoản",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IntegrationError"
+                },
+                "example": {
+                  "success": false,
+                  "error": "NOT_FOUND",
+                  "message": "không tìm thấy tài khoản liên kết"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Tham số vượt giới hạn",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IntegrationError"
+                },
+                "example": {
+                  "success": false,
+                  "error": "VALIDATION_ERROR",
+                  "message": "events tối đa 2000"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Lỗi hệ thống",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IntegrationError"
+                },
+                "example": {
+                  "success": false,
+                  "error": "INTERNAL_ERROR",
+                  "message": "lỗi hệ thống, vui lòng thử lại"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "Gateway không kết nối được integration-service",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IntegrationError"
+                },
+                "example": {
+                  "success": false,
+                  "error": "BAD_GATEWAY",
+                  "message": "Không thể kết nối tới microservice 'integration': connect ECONNREFUSED"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "bearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT"
+      }
+    },
+    "schemas": {
+      "IntegrationError": {
+        "type": "object",
+        "required": [
+          "success",
+          "error",
+          "message"
+        ],
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "example": false
+          },
+          "error": {
+            "type": "string",
+            "example": "NOT_FOUND"
+          },
+          "message": {
+            "type": "string"
+          }
+        }
+      },
+      "ExchangeRate": {
+        "type": "object",
+        "properties": {
+          "currency_code": {
+            "type": "string",
+            "example": "USD"
+          },
+          "rate_to_vnd": {
+            "type": "number",
+            "example": 25412.5
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "ProviderQuote": {
+        "type": "object",
+        "properties": {
+          "provider": {
+            "type": "string",
+            "example": "VCB"
+          },
+          "latency_ms": {
+            "type": "integer",
+            "example": 873
+          },
+          "error": {
+            "type": "string",
+            "description": "Chỉ có khi ngân hàng không phản hồi kịp",
+            "example": "quá thời gian chờ"
+          }
+        }
+      },
+      "RatesResponse": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean"
+          },
+          "message": {
+            "type": "string"
+          },
+          "data": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ExchangeRate"
+            }
+          }
+        }
+      },
+      "SyncRatesResponse": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean"
+          },
+          "message": {
+            "type": "string"
+          },
+          "data": {
+            "type": "object",
+            "properties": {
+              "providers_ok": {
+                "type": "integer"
+              },
+              "providers": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/ProviderQuote"
+                }
+              },
+              "rates": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/ExchangeRate"
+                }
+              }
+            }
+          }
+        }
+      },
+      "ProvidersUnavailable": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "example": false
+          },
+          "error": {
+            "type": "string",
+            "example": "PROVIDERS_UNAVAILABLE"
+          },
+          "message": {
+            "type": "string"
+          },
+          "providers": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ProviderQuote"
+            }
+          }
+        }
+      },
+      "LinkedAccount": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "user_id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "bank_code": {
+            "type": "string",
+            "example": "VCB"
+          },
+          "account_no": {
+            "type": "string",
+            "example": "0011001234567"
+          },
+          "holder_name": {
+            "type": "string",
+            "example": "NGUYEN VAN A"
+          },
+          "balance": {
+            "type": "number",
+            "example": 15250000
+          },
+          "version": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Tăng mỗi lần số dư thay đổi"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "CreateAccountRequest": {
+        "type": "object",
+        "required": [
+          "bank_code",
+          "account_no",
+          "holder_name"
+        ],
+        "properties": {
+          "user_id": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Chỉ dùng khi gọi thẳng service; qua Gateway bị thay bằng user trong JWT"
+          },
+          "bank_code": {
+            "type": "string",
+            "pattern": "^[A-Z0-9]{2,20}$",
+            "description": "Chữ in hoa + số, 2-20 ký tự (tự chuyển in hoa)",
+            "example": "VCB"
+          },
+          "account_no": {
+            "type": "string",
+            "pattern": "^[0-9]{6,30}$",
+            "description": "Chỉ gồm số, 6-30 ký tự",
+            "example": "0011001234567"
+          },
+          "holder_name": {
+            "type": "string",
+            "maxLength": 100,
+            "example": "Nguyen Van A"
+          },
+          "initial_balance": {
+            "type": "number",
+            "minimum": 0,
+            "default": 0,
+            "example": 15000000
+          }
+        }
+      },
+      "AccountResponse": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean"
+          },
+          "message": {
+            "type": "string"
+          },
+          "data": {
+            "$ref": "#/components/schemas/LinkedAccount"
+          }
+        }
+      },
+      "AccountListResponse": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean"
+          },
+          "message": {
+            "type": "string"
+          },
+          "data": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/LinkedAccount"
+            }
+          }
+        }
+      },
+      "BankTransaction": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "account_id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "provider": {
+            "type": "string"
+          },
+          "external_ref": {
+            "type": "string"
+          },
+          "idempotency_key": {
+            "type": "string"
+          },
+          "direction": {
+            "type": "string",
+            "enum": [
+              "CREDIT",
+              "DEBIT"
+            ]
+          },
+          "amount": {
+            "type": "number"
+          },
+          "balance_after": {
+            "type": "number"
+          },
+          "category": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "occurred_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "RECEIVED",
+              "SYNCING",
+              "SYNCED",
+              "FAILED",
+              "REJECTED"
+            ]
+          },
+          "transaction_ref": {
+            "type": "integer",
+            "format": "int64",
+            "nullable": true,
+            "description": "ID giao dịch bên transaction-service sau khi SYNCED"
+          },
+          "sync_attempts": {
+            "type": "integer"
+          },
+          "last_error": {
+            "type": "string",
+            "nullable": true,
+            "description": "Chỉ xuất hiện khi có lỗi đồng bộ"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "BankTransactionResponse": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean"
+          },
+          "message": {
+            "type": "string"
+          },
+          "data": {
+            "$ref": "#/components/schemas/BankTransaction"
+          }
+        }
+      },
+      "BankTransactionListResponse": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean"
+          },
+          "message": {
+            "type": "string"
+          },
+          "data": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/BankTransaction"
+            }
+          }
+        }
+      },
+      "WebhookRequest": {
+        "type": "object",
+        "required": [
+          "provider",
+          "external_ref",
+          "account_no",
+          "direction",
+          "amount"
+        ],
+        "properties": {
+          "provider": {
+            "type": "string",
+            "maxLength": 20,
+            "description": "Mã ngân hàng gửi webhook (tự in hoa)",
+            "example": "VCB"
+          },
+          "external_ref": {
+            "type": "string",
+            "maxLength": 100,
+            "description": "Mã giao dịch phía ngân hàng",
+            "example": "FT26293001234"
+          },
+          "bank_code": {
+            "type": "string",
+            "description": "Mã ngân hàng của tài khoản; mặc định = provider",
+            "example": "VCB"
+          },
+          "account_no": {
+            "type": "string",
+            "example": "0011001234567"
+          },
+          "direction": {
+            "type": "string",
+            "enum": [
+              "CREDIT",
+              "DEBIT"
+            ],
+            "description": "Không phân biệt hoa thường"
+          },
+          "amount": {
+            "type": "number",
+            "exclusiveMinimum": true,
+            "minimum": 0,
+            "maximum": 1000000000000,
+            "example": 1500000
+          },
+          "category": {
+            "type": "string",
+            "maxLength": 100,
+            "example": "Lương"
+          },
+          "description": {
+            "type": "string",
+            "maxLength": 255,
+            "example": "Chuyen tien luong thang 10"
+          },
+          "occurred_at": {
+            "type": "string",
+            "description": "RFC3339 hoặc \"YYYY-MM-DD HH:mm:ss\" / \"YYYY-MM-DDTHH:mm:ss\" (giờ địa phương). Mặc định = thời điểm nhận",
+            "example": "2026-10-20 14:30:00"
+          }
+        }
+      },
+      "WebhookResponse": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "description": "false khi giao dịch bị REJECTED"
+          },
+          "message": {
+            "type": "string"
+          },
+          "data": {
+            "type": "object",
+            "properties": {
+              "duplicate": {
+                "type": "boolean"
+              },
+              "transaction": {
+                "$ref": "#/components/schemas/BankTransaction"
+              }
+            }
+          }
+        }
+      },
+      "RetryResponse": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean"
+          },
+          "message": {
+            "type": "string"
+          },
+          "data": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "integer",
+                "format": "int64"
+              }
+            }
+          }
+        }
+      },
+      "SimulateRequest": {
+        "type": "object",
+        "required": [
+          "account_id"
+        ],
+        "properties": {
+          "account_id": {
+            "type": "integer",
+            "format": "int64",
+            "example": 1
+          },
+          "events": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 2000,
+            "default": 50,
+            "description": "Số biến động duy nhất"
+          },
+          "workers": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 200,
+            "default": 10,
+            "description": "Số goroutine xử lý song song"
+          },
+          "duplicate_rate": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1,
+            "default": 0.3,
+            "description": "Tỷ lệ request gửi trùng thêm"
+          },
+          "mode": {
+            "type": "string",
+            "enum": [
+              "safe",
+              "unsafe"
+            ],
+            "default": "safe"
+          },
+          "sync": {
+            "type": "boolean",
+            "default": true,
+            "description": "Có đẩy dữ liệu giả lập sang transaction-service không (luôn false khi mode=unsafe)"
+          }
+        }
+      },
+      "SimulateResponse": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean"
+          },
+          "message": {
+            "type": "string"
+          },
+          "data": {
+            "type": "object",
+            "properties": {
+              "mode": {
+                "type": "string"
+              },
+              "account_id": {
+                "type": "integer"
+              },
+              "workers": {
+                "type": "integer"
+              },
+              "unique_events": {
+                "type": "integer"
+              },
+              "requests_sent": {
+                "type": "integer"
+              },
+              "created": {
+                "type": "integer"
+              },
+              "duplicates": {
+                "type": "integer"
+              },
+              "rejected": {
+                "type": "integer"
+              },
+              "errors": {
+                "type": "integer"
+              },
+              "stored_records": {
+                "type": "integer"
+              },
+              "balance_before": {
+                "type": "number"
+              },
+              "balance_after": {
+                "type": "number"
+              },
+              "expected_balance": {
+                "type": "number"
+              },
+              "difference": {
+                "type": "number"
+              },
+              "consistent": {
+                "type": "boolean"
+              },
+              "elapsed_ms": {
+                "type": "integer"
+              },
+              "ref_prefix": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
