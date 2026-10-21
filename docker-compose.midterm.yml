@@ -1,6 +1,6 @@
 # =============================================================================
 # SOA-CashFlow: Docker Compose - Báo cáo Giữa kỳ (Triển khai Services Native)
-# Kiến trúc 6 Microservices + API Gateway + 4 MySQL + 1 MongoDB + 1 Redis
+# Kiến trúc 6 Microservices + API Gateway + 3 MySQL + 1 SQLite + 1 Redis
 # =============================================================================
 version: '3.8'
 
@@ -117,9 +117,7 @@ services:
       - HOST=0.0.0.0
       - PORT=8084
       - TRANSACTION_SERVICE_URL=http://transaction-service:8082
-      - MONGO_URI=mongodb://mongo_admin:mongo_password@analytics-mongo:27017/analytics_db?authSource=admin
     depends_on:
-      - analytics-mongo
       - transaction-service
     networks:
       - midterm-network
@@ -233,18 +231,7 @@ services:
     networks:
       - midterm-network
 
-  # 5. MongoDB cho Analytics Service
-  analytics-mongo:
-    image: mongo:6.0
-    container_name: cashflow-analytics-mongo
-    environment:
-      MONGO_INITDB_ROOT_USERNAME: mongo_admin
-      MONGO_INITDB_ROOT_PASSWORD: mongo_password
-      MONGO_INITDB_DATABASE: analytics_db
-    volumes:
-      - ./services/analytics-service/db/init-mongo.js:/docker-entrypoint-initdb.d/mongo-init.js:ro
-    networks:
-      - midterm-network
+  # (Analytics Service dùng SQLite nội bộ, không cần container DB riêng)
 
   # 6. Redis cho Notification Service Pub/Sub
   redis:
