@@ -88,7 +88,7 @@ services:
     networks:
       - final-network
 
-  # 4. FastAPI (Python)
+  # 4. Analytics (reuses the native implementation available in this project)
   analytics-service:
     build:
       context: ./services/analytics-service
@@ -101,18 +101,17 @@ services:
       - HOST=0.0.0.0
       - PORT=8084
       - TRANSACTION_SERVICE_URL=http://transaction-service:8082
-      - ANALYTICS_DB_HOST=analytics-db
-      - ANALYTICS_DB_PORT=3306
-      - ANALYTICS_DB_NAME=analytics_db
-      - ANALYTICS_DB_USER=root
+      - ANALYTICS_DB_HOST=${ANALYTICS_DB_HOST:-analytics-db}
+      - ANALYTICS_DB_PORT=${ANALYTICS_DB_PORT:-3306}
+      - ANALYTICS_DB_NAME=${ANALYTICS_DB_NAME:-analytics_db}
+      - ANALYTICS_DB_USER=${ANALYTICS_DB_USER:-root}
       - ANALYTICS_DB_PASSWORD=${ANALYTICS_DB_PASSWORD:-root_password}
     depends_on:
-      - transaction-service
       - analytics-db
+      - transaction-service
     networks:
       - final-network
 
-  # 5. Go Gin (Go)
   integration-service:
     build:
       context: ./services/integration-service
@@ -202,11 +201,11 @@ services:
     container_name: cashflow-analytics-db
     restart: always
     environment:
-      MYSQL_ROOT_PASSWORD: root_password
-      MYSQL_DATABASE: analytics_db
+      MYSQL_ROOT_PASSWORD: ${ANALYTICS_DB_PASSWORD:-root_password}
+      MYSQL_DATABASE: ${ANALYTICS_DB_NAME:-analytics_db}
     volumes:
       - ./services/analytics-service/db/init-analytics-db.sql:/docker-entrypoint-initdb.d/init.sql:ro
-      - analytics_final_db_data:/var/lib/mysql
+      - analytics_final_data:/var/lib/mysql
     networks:
       - final-network
 
@@ -229,5 +228,5 @@ volumes:
   transaction_final_data:
   asset_final_data:
   integration_final_data:
+  analytics_final_data:
   redis_final_data:
-  analytics_final_db_data:

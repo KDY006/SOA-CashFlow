@@ -110,18 +110,17 @@ services:
       - HOST=0.0.0.0
       - PORT=8084
       - TRANSACTION_SERVICE_URL=http://transaction-service:8082
-      - ANALYTICS_DB_HOST=analytics-db
-      - ANALYTICS_DB_PORT=3306
-      - ANALYTICS_DB_NAME=analytics_db
-      - ANALYTICS_DB_USER=root
+      - ANALYTICS_DB_HOST=${ANALYTICS_DB_HOST:-analytics-db}
+      - ANALYTICS_DB_PORT=${ANALYTICS_DB_PORT:-3306}
+      - ANALYTICS_DB_NAME=${ANALYTICS_DB_NAME:-analytics_db}
+      - ANALYTICS_DB_USER=${ANALYTICS_DB_USER:-root}
       - ANALYTICS_DB_PASSWORD=${ANALYTICS_DB_PASSWORD:-root_password}
     depends_on:
-      - transaction-service
       - analytics-db
+      - transaction-service
     networks:
       - cashflow-network
 
-  # 5. Integration Service (Go)
   integration-service:
     build:
       context: ./services/integration-service
@@ -221,8 +220,8 @@ services:
     container_name: cashflow-analytics-db
     restart: always
     environment:
-      MYSQL_ROOT_PASSWORD: root_password
-      MYSQL_DATABASE: analytics_db
+      MYSQL_ROOT_PASSWORD: ${ANALYTICS_DB_PASSWORD:-root_password}
+      MYSQL_DATABASE: ${ANALYTICS_DB_NAME:-analytics_db}
     volumes:
       - ./services/analytics-service/db/init-analytics-db.sql:/docker-entrypoint-initdb.d/init.sql:ro
       - analytics_db_data:/var/lib/mysql
@@ -249,5 +248,5 @@ volumes:
   transaction_db_data:
   asset_db_data:
   integration_db_data:
-  redis_data:
   analytics_db_data:
+  redis_data:
