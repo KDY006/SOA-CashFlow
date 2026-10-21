@@ -346,3 +346,4 @@ if __name__ == "__main__":
     _init_database()
     print(f"Analytics Service (Native Python) listening on {HOST}:{PORT}")
     ThreadingHTTPServer((HOST, PORT), AnalyticsHandler).serve_forever()
+
