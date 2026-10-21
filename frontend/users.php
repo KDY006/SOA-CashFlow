@@ -734,8 +734,7 @@ document.addEventListener('DOMContentLoaded', () => {
             document.getElementById('euPhone').value = editBtn.dataset.phone || '';
             document.getElementById('euRole').value = editBtn.dataset.role || 'USER';
             document.getElementById('euStatus').value = editBtn.dataset.status || 'ACTIVE';
-            const modal = document.getElementById('editUserModal');
-            if (modal && window.CF) window.CF.openModal(modal);
+            if (window.CF) window.CF.openModal('editUserModal');
             return;
         }
 
@@ -748,19 +747,17 @@ document.addEventListener('DOMContentLoaded', () => {
             document.getElementById('duFullName').textContent = delBtn.dataset.delFullname || '';
             document.getElementById('duUsername').textContent = '@' + (delBtn.dataset.delUsername || '');
             document.getElementById('duEmail').textContent = delBtn.dataset.delEmail || '';
-            const modal = document.getElementById('deleteUserModal');
-            if (modal && window.CF) window.CF.openModal(modal);
+            if (window.CF) window.CF.openModal('deleteUserModal');
             return;
         }
 
         const inspectBtn = e.target.closest('[data-inspect-user]');
         if (inspectBtn) {
             const uid = inspectBtn.dataset.inspectUser;
-            const modal = document.getElementById('inspectUserModal');
             const bodyEl = document.getElementById('iuBody');
             document.getElementById('iuSubtitle').textContent = `GET /api/admin/users/${uid}`;
             bodyEl.innerHTML = '<div class="small t-muted">Đang gọi GET /api/admin/users/' + uid + '...</div>';
-            if (modal && window.CF) window.CF.openModal(modal);
+            if (window.CF) window.CF.openModal('inspectUserModal');
             try {
                 const res = await fetch(`api.php?path=${encodeURIComponent('/api/admin/users/' + uid)}`);
                 const data = await res.json();

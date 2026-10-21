@@ -613,8 +613,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (holderEl) holderEl.textContent = delBtn.dataset.delHolder || '';
                 if (balEl) balEl.textContent = delBtn.dataset.delBal || '0 ₫';
                 const modal = document.getElementById('deleteBankModal');
-                if (modal && window.CF && typeof window.CF.openModal === 'function') {
-                    window.CF.openModal(modal);
+                if (window.CF && typeof window.CF.openModal === 'function') {
+                    window.CF.openModal('deleteBankModal');
                 } else if (modal) {
                     modal.classList.add('open');
                 }

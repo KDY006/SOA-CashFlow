@@ -6,8 +6,8 @@
   'use strict';
 
   /* ---------------- Modal ---------------- */
-  function openModal(id) {
-    const m = document.getElementById(id);
+  function openModal(m) {
+    if (typeof m === 'string') m = document.getElementById(m);
     if (!m) return;
     m.classList.add('open');
     document.body.style.overflow = 'hidden';
