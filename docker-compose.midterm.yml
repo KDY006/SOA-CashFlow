@@ -1,6 +1,6 @@
 # =============================================================================
 # SOA-CashFlow: Docker Compose - Báo cáo Giữa kỳ (Triển khai Services Native)
-# Kiến trúc 6 Microservices + API Gateway + 3 MySQL + 1 SQLite + 1 Redis
+# Kiến trúc 6 Microservices + API Gateway + 5 MySQL + 1 Redis
 # =============================================================================
 version: '3.8'
 
@@ -107,17 +107,23 @@ services:
   # ---------------------------------------------------------------------------
   analytics-service:
     build:
-      context: ./services/analytics-service/midterm
-      dockerfile: Dockerfile
+      context: ./services/analytics-service
+      dockerfile: midterm/Dockerfile
     container_name: cashflow-analytics-midterm
+    restart: always
     ports:
       - "${ANALYTICS_SERVICE_PORT:-8084}:8084"
     environment:
-      - PROFILE=native
       - HOST=0.0.0.0
       - PORT=8084
       - TRANSACTION_SERVICE_URL=http://transaction-service:8082
+      - ANALYTICS_DB_HOST=${ANALYTICS_DB_HOST:-analytics-db}
+      - ANALYTICS_DB_PORT=${ANALYTICS_DB_PORT:-3306}
+      - ANALYTICS_DB_NAME=${ANALYTICS_DB_NAME:-analytics_db}
+      - ANALYTICS_DB_USER=${ANALYTICS_DB_USER:-root}
+      - ANALYTICS_DB_PASSWORD=${ANALYTICS_DB_PASSWORD:-root_password}
     depends_on:
+      - analytics-db
       - transaction-service
     networks:
       - midterm-network
@@ -231,9 +237,20 @@ services:
     networks:
       - midterm-network
 
-  # (Analytics Service dùng SQLite nội bộ, không cần container DB riêng)
+  # 5. MySQL 8 cho Analytics Service
+  analytics-db:
+    image: mysql:8.0
+    container_name: cashflow-analytics-db
+    restart: always
+    environment:
+      MYSQL_ROOT_PASSWORD: ${ANALYTICS_DB_PASSWORD:-root_password}
+      MYSQL_DATABASE: ${ANALYTICS_DB_NAME:-analytics_db}
+    volumes:
+      - ./services/analytics-service/db/init-analytics-db.sql:/docker-entrypoint-initdb.d/init.sql:ro
+      - analytics_midterm_db_data:/var/lib/mysql
+    networks:
+      - midterm-network
 
-  # 6. Redis cho Notification Service Pub/Sub
   redis:
     image: redis:7-alpine
     container_name: cashflow-redis
@@ -245,6 +262,9 @@ services:
 # =============================================================================
 # MẠNG NỘI BỘ
 # =============================================================================
+volumes:
+  analytics_midterm_db_data:
+
 networks:
   midterm-network:
     name: cashflow-midterm-net

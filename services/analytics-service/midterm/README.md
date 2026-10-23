@@ -1,40 +1,51 @@
-# Analytics Service - Giữa kỳ (Python thuần)
+# Analytics Service - Giữa kỳ
 
-Thành viên phụ trách: **Lê Khải Hoàn (khonahihi)**. API dùng `http.server`, `urllib` và `sqlite3` có sẵn trong Python, không dùng framework hoặc ORM. Port mặc định `8084`.
+Analytics Service dùng Python Native để nhận yêu cầu qua HTTP, gọi Transaction Service lấy giao dịch và lưu báo cáo tổng hợp vào MySQL 8 (`analytics_db`). **PyMySQL là thư viện Python kết nối tới MySQL**, không phải database riêng.
 
-## API
+## API hiện có
 
-- `GET /health`: health check.
-- `GET /api/analytics/summary?user_id=1&from_date=2026-01-01&to_date=2026-01-31`: tổng thu, tổng chi, dòng tiền ròng.
-- `GET /api/analytics/category-breakdown?user_id=1&from_date=2026-01-01&to_date=2026-01-31`: cơ cấu chi tiêu theo danh mục.
-- `GET /api/analytics/trends?user_id=1&months=6`: lịch sử dòng tiền và dự báo tháng tiếp theo.
-- `GET /api/analytics/anomalies?user_id=1&from_date=2026-01-01&to_date=2026-01-31`: các khoản chi bất thường độc lập với API xu hướng.
-- `POST /api/analytics/aggregate`: tổng hợp báo cáo và upsert vào SQLite theo `user_id`, `year`, `month`.
-- `GET /api/analytics/reports?user_id=1&year=2026&month=1`: đọc báo cáo đã lưu. Có thể bỏ `year` và/hoặc `month` để lấy tối đa 100 báo cáo gần nhất.
+- `GET /health` - kiểm tra trạng thái service.
+- `GET /api/analytics/summary?from_date=2026-01-01&to_date=2026-01-31` - tổng thu, tổng chi, dòng tiền ròng và số giao dịch.
+- `GET /api/analytics/category-breakdown?from_date=2026-01-01&to_date=2026-01-31` - tổng chi theo danh mục và tỷ lệ phần trăm.
+- `GET /api/analytics/trends?months=6` - xu hướng thu chi theo tháng và dự báo dòng tiền tháng tiếp theo.
+- `GET /api/analytics/anomalies?from_date=2026-01-01&to_date=2026-01-31` - phát hiện khoản chi bất thường.
+- `POST /api/analytics/aggregate` - lấy giao dịch, tổng hợp báo cáo tháng và lưu/cập nhật vào MySQL. Có thể gửi `transactions` trực tiếp trong JSON body để demo.
+- `GET /api/analytics/reports?year=2026&month=1` - đọc báo cáo đã lưu; bỏ bộ lọc để lấy tối đa 100 báo cáo gần nhất.
 
-`POST /aggregate` nhận `user_id`, `from_date`, `to_date`; có thể truyền `transactions` để chạy độc lập với Transaction Service. Khi không truyền, service gọi `GET /api/transactions` tại Transaction Service.
+Khi request đi qua Gateway, `X-User-Id` được lấy từ JWT. Chỉ ADMIN mới có thể chọn `user_id` khác. Nếu gọi service trực tiếp để demo, truyền `user_id` trên query hoặc body.
 
-## Database
+## Liên kết với các service khác
 
-Schema nằm ở `services/analytics-service/db/init-analytics-db.sql`. Service tạo file SQLite theo biến `ANALYTICS_DB_PATH`; mặc định là `db/analytics.sqlite3` trong thư mục Analytics Service. Khóa duy nhất `(user_id, year, month)` giúp một kỳ báo cáo được cập nhật thay vì tạo bản trùng.
+Analytics gọi `GET /api/transactions` tại Transaction Service, truyền `user_id`, khoảng ngày, `limit`/`offset` và `X-User-Id`. Phân trang được đọc theo từng đợt để không bỏ sót giao dịch khi người dùng có nhiều dữ liệu. Gateway chuyển tiếp `/api/analytics/*` tới Analytics Service.
 
-Database khởi tạo từ SQL schema khi service khởi động. Docker Compose gắn volume `analytics_data` để dữ liệu vẫn còn sau khi container được tạo lại.
+Quản lý ngân sách thuộc Transaction Service (`/api/budgets` và `/api/budgets/progress`), nên Analytics không tạo API CRUD ngân sách trùng lặp.
 
-## Chạy local
+## Database và cấu hình
 
-```powershell
-$env:TRANSACTION_SERVICE_URL = "http://localhost:8082"
-python .\src\main.py
-```
+Bảng `monthly_reports` được tạo bởi `db/init-analytics-db.sql`. Compose chạy service `analytics-db` với image `mysql:8.0` và volume riêng để dữ liệu tồn tại sau khi tạo lại container. Các biến nằm ở `.env` gốc:
 
-Nếu không truyền `transactions` khi gọi `/aggregate`, Transaction Service cần chạy. Dữ liệu SQLite được lưu tại `db/analytics.sqlite3`.
+- `ANALYTICS_DB_HOST=analytics-db`
+- `ANALYTICS_DB_PORT=3306`
+- `ANALYTICS_DB_NAME=analytics_db`
+- `ANALYTICS_DB_USER=root`
+- `ANALYTICS_DB_PASSWORD=root_password`
 
-## Chạy Docker
+Không dùng SQLite hoặc MongoDB. Mỗi microservice giữ database riêng; Analytics chỉ lấy giao dịch qua HTTP API, không đọc trực tiếp `transaction_db`.
 
-Từ thư mục gốc dự án:
+## Chạy toàn bộ backend giữa kỳ
+
+Từ thư mục gốc project:
 
 ```bash
-docker compose -f docker-compose.midterm.yml up --build analytics-service
+docker compose -f docker-compose.midterm.yml up --build
 ```
 
+Sau khi các container khởi động, kiểm tra `http://localhost:8084/health`. Khi chạy trong Compose, hostname `analytics-db` và `transaction-service` được phân giải nội bộ.
 
+## Chạy riêng Analytics và dependencies
+
+```bash
+docker compose -f docker-compose.midterm.yml up --build analytics-db transaction-service analytics-service
+```
+
+Docker Compose chỉ dùng một `.env` ở thư mục gốc; file này chứa các biến theo prefix của từng service, ví dụ `ANALYTICS_DB_*`.
