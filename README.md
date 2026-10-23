@@ -302,6 +302,10 @@ docker run -d --name cashflow-phpmyadmin --network cashflow-midterm-net -p 8088:
   - **Password:** `root_password`
 - Nhấn **Log in**: Bạn có giao diện bảng để click chuột xem, lọc và sửa dữ liệu dễ dàng.
 
+> **Lưu ý về Dịch vụ Thông báo (Notification Service):**
+> 5 dịch vụ lưu trữ dữ liệu dạng bảng quan hệ (Auth, Transaction, Asset, Integration, Analytics) đều dùng **MySQL 8.0** nên có thể xem qua **phpMyAdmin**. Riêng **Notification Service** sử dụng **In-Memory Store kết hợp Redis Pub/Sub (Broker)** để phát thông báo realtime (SSE), do đó danh sách thông báo sẽ được kiểm tra trực tiếp qua API endpoint `/api/notifications` hoặc lệnh Redis CLI ở mục **7.2**.
+
+
 ---
 
 ### 7.2. Lệnh Terminal xuất bảng kẻ khung tức thì
@@ -326,6 +330,16 @@ docker exec -it cashflow-integration-db mysql -uroot -proot_password integration
 
 # 6. Kiểm tra báo cáo phân tích tháng đã lưu (Analytics Service):
 docker exec -it cashflow-analytics-db mysql -uroot -proot_password analytics_db -e "SELECT report_id, user_id, year, month, generated_at FROM monthly_reports;"
+
+# 7. Kiểm tra danh sách thông báo đã nhận (Notification Service):
+# (Notification Service lưu trữ In-Memory kết hợp Redis Pub/Sub, truy vấn danh sách bằng curl hoặc PowerShell)
+curl -s "http://localhost:8086/api/notifications?userId=1"
+
+# Hoặc bằng PowerShell (hiển thị đẹp dạng JSON):
+powershell -Command "Invoke-RestMethod -Uri 'http://localhost:8086/api/notifications?userId=1' | ConvertTo-Json -Depth 4"
+
+# 8. Giám sát các kênh tin nhắn thời gian thực trong Redis (Redis Notification Broker):
+docker exec -it cashflow-redis-notification redis-cli PUBSUB CHANNELS
 ```
 
 ---
