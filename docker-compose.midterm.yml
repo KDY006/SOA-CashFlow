@@ -12,7 +12,7 @@ services:
     build:
       context: ./gateway/midterm
       dockerfile: Dockerfile
-    container_name: cashflow-gateway-midterm
+    container_name: cashflow-gateway-service
     ports:
       - "${GATEWAY_PORT:-8080}:8080"
     environment:
@@ -43,7 +43,7 @@ services:
     build:
       context: ./services/auth-service/midterm
       dockerfile: Dockerfile
-    container_name: cashflow-auth-midterm
+    container_name: cashflow-auth-service
     ports:
       - "${AUTH_SERVICE_PORT:-8081}:8081"
     environment:
@@ -66,7 +66,7 @@ services:
     build:
       context: ./services/transaction-service/midterm
       dockerfile: Dockerfile
-    container_name: cashflow-transaction-midterm
+    container_name: cashflow-transaction-service
     ports:
       - "${TRANSACTION_SERVICE_PORT:-8082}:8082"
     environment:
@@ -88,7 +88,7 @@ services:
     build:
       context: ./services/asset-service/midterm
       dockerfile: Dockerfile
-    container_name: cashflow-asset-midterm
+    container_name: cashflow-asset-service
     ports:
       - "${ASSET_SERVICE_PORT:-8083}:8083"
     environment:
@@ -109,7 +109,7 @@ services:
     build:
       context: ./services/analytics-service
       dockerfile: midterm/Dockerfile
-    container_name: cashflow-analytics-midterm
+    container_name: cashflow-analytics-service
     restart: always
     ports:
       - "${ANALYTICS_SERVICE_PORT:-8084}:8084"
@@ -135,7 +135,7 @@ services:
     build:
       context: ./services/integration-service/midterm
       dockerfile: Dockerfile
-    container_name: cashflow-integration-midterm
+    container_name: cashflow-integration-service
     restart: on-failure
     ports:
       - "${INTEGRATION_SERVICE_PORT:-8085}:8085"
@@ -165,7 +165,7 @@ services:
     build:
       context: ./services/notification-service/midterm
       dockerfile: Dockerfile
-    container_name: cashflow-notification-midterm
+    container_name: cashflow-notification-service
     ports:
       - "${NOTIFICATION_SERVICE_PORT:-8086}:8086"
     environment:
@@ -251,9 +251,10 @@ services:
     networks:
       - midterm-network
 
+  # 6. Redis cho Notification Service Pub/Sub
   redis:
     image: redis:7-alpine
-    container_name: cashflow-redis
+    container_name: cashflow-redis-notification
     ports:
       - "6379:6379"
     networks:
