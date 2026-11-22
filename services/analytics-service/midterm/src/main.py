@@ -3,19 +3,47 @@ from __future__ import annotations
 
 import json
 import os
+import pymysql
+from pymysql.cursors import DictCursor
 import statistics
+import time
 import urllib.error
 import urllib.parse
 import urllib.request
 from collections import defaultdict
-from datetime import date, datetime
+from contextlib import contextmanager
+from datetime import date, datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
 from typing import Any
 
 HOST = os.getenv("HOST", "0.0.0.0")
 PORT = int(os.getenv("PORT", "8084"))
 TRANSACTION_SERVICE_URL = os.getenv("TRANSACTION_SERVICE_URL", "http://transaction-service:8082")
-MONGO_URI = os.getenv("MONGO_URI", "")
+SERVICE_DIR = Path(__file__).resolve().parents[2]
+SCHEMA_PATH = Path(os.getenv("ANALYTICS_DB_SCHEMA", SERVICE_DIR / "db" / "init-analytics-db.sql"))
+DB_HOST = os.getenv("ANALYTICS_DB_HOST", "analytics-db")
+DB_PORT = int(os.getenv("ANALYTICS_DB_PORT", "3306"))
+DB_NAME = os.getenv("ANALYTICS_DB_NAME", "analytics_db")
+DB_USER = os.getenv("ANALYTICS_DB_USER", "root")
+DB_PASSWORD = os.getenv("ANALYTICS_DB_PASSWORD", "root_password")
+
+DEFAULT_SCHEMA = """
+CREATE TABLE IF NOT EXISTS monthly_reports (
+    report_id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+    user_id BIGINT NOT NULL,
+    year SMALLINT NOT NULL,
+    month TINYINT NOT NULL,
+    report_json JSON NOT NULL,
+    generated_at DATETIME NOT NULL,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    UNIQUE KEY uq_monthly_reports_user_period (user_id, year, month),
+    KEY idx_monthly_reports_user_period (user_id, year, month),
+    CONSTRAINT chk_monthly_reports_year CHECK (year BETWEEN 2000 AND 2100),
+    CONSTRAINT chk_monthly_reports_month CHECK (month BETWEEN 1 AND 12)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+"""
 
 
 def _date(value: Any) -> date | None:
@@ -60,20 +88,28 @@ def _normalise(rows: Any) -> list[dict[str, Any]]:
 
 
 def _fetch_transactions(user_id: int, start: date | None, end: date | None) -> list[dict[str, Any]]:
-    params: dict[str, str] = {"user_id": str(user_id), "limit": "1000"}
-    if start:
-        params["from_date"] = start.isoformat() + " 00:00:00"
-    if end:
-        params["to_date"] = end.isoformat() + " 23:59:59"
-    url = TRANSACTION_SERVICE_URL.rstrip("/") + "/api/transactions?" + urllib.parse.urlencode(params)
-    request = urllib.request.Request(url, headers={"Accept": "application/json", "X-User-Id": str(user_id)})
-    try:
-        with urllib.request.urlopen(request, timeout=8) as response:
-            payload = json.loads(response.read().decode("utf-8"))
-    except (urllib.error.URLError, TimeoutError, json.JSONDecodeError) as exc:
-        raise RuntimeError(f"Không lấy được dữ liệu Transaction Service: {exc}")
-    rows = payload.get("data", payload) if isinstance(payload, dict) else payload
-    return _normalise(rows)
+    limit, offset = 500, 0
+    result: list[dict[str, Any]] = []
+    while True:
+        params: dict[str, str] = {"user_id": str(user_id), "limit": str(limit), "offset": str(offset)}
+        if start:
+            params["from_date"] = start.isoformat() + " 00:00:00"
+        if end:
+            params["to_date"] = end.isoformat() + " 23:59:59"
+        url = TRANSACTION_SERVICE_URL.rstrip("/") + "/api/transactions?" + urllib.parse.urlencode(params)
+        request = urllib.request.Request(url, headers={"Accept": "application/json", "X-User-Id": str(user_id)})
+        try:
+            with urllib.request.urlopen(request, timeout=8) as response:
+                payload = json.loads(response.read().decode("utf-8"))
+        except (urllib.error.URLError, TimeoutError, json.JSONDecodeError) as exc:
+            raise RuntimeError(f"Không lấy được dữ liệu Transaction Service: {exc}")
+        page = payload.get("data", payload) if isinstance(payload, dict) else payload
+        result.extend(_normalise(page))
+        if len(page) < limit:
+            return result
+        offset += len(page)
+        if offset >= 100_000:
+            raise RuntimeError("Transaction Service trả về quá 100000 giao dịch cho một lần phân tích")
 
 
 def _period(rows: list[dict[str, Any]], start: date | None, end: date | None) -> list[dict[str, Any]]:
@@ -143,18 +179,106 @@ def anomalies(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return flagged
 
 
-def _save_report(user_id: int, report: dict[str, Any]) -> None:
-    if not MONGO_URI:
-        return
+class _DatabaseConnection:
+    """Thin adapter exposing execute/executescript over a PyMySQL connection."""
+    def __init__(self, raw):
+        self.raw = raw
+
+    def execute(self, sql, params=()):
+        cursor = self.raw.cursor()
+        cursor.execute(sql, params)
+        return cursor
+
+    def executescript(self, script):
+        for statement in script.split(";"):
+            if statement.strip():
+                self.execute(statement)
+
+    def commit(self):
+        self.raw.commit()
+
+    def rollback(self):
+        self.raw.rollback()
+
+    def close(self):
+        self.raw.close()
+
+
+def _connect_database() -> _DatabaseConnection:
+    return _DatabaseConnection(pymysql.connect(
+        host=DB_HOST, port=DB_PORT, database=DB_NAME, user=DB_USER,
+        password=DB_PASSWORD, charset="utf8mb4", cursorclass=DictCursor,
+        connect_timeout=10, autocommit=False,
+    ))
+
+
+@contextmanager
+def _database():
+    connection = _connect_database()
     try:
-        from pymongo import MongoClient
-        client = MongoClient(MONGO_URI, serverSelectionTimeoutMS=1500)
-        client.analytics_db.monthly_reports.update_one(
-            {"user_id": user_id, "year": report["year"], "month": report["month"]},
-            {"$set": report}, upsert=True)
-        client.close()
-    except Exception as exc:
-        raise RuntimeError(f"Không lưu được báo cáo vào MongoDB: {exc}")
+        yield connection
+        connection.commit()
+    except Exception:
+        connection.rollback()
+        raise
+    finally:
+        connection.close()
+
+
+def _init_database() -> None:
+    schema_sql = SCHEMA_PATH.read_text(encoding="utf-8") if SCHEMA_PATH.is_file() else DEFAULT_SCHEMA
+    last_error = None
+    for attempt in range(30):
+        try:
+            with _database() as connection:
+                connection.executescript(schema_sql)
+            return
+        except pymysql.MySQLError as exc:
+            last_error = exc
+            if attempt == 29:
+                break
+            time.sleep(2)
+    raise RuntimeError(f"Không kết nối được MySQL {DB_HOST}:{DB_PORT}/{DB_NAME}: {last_error}")
+
+
+def _save_report(user_id: int, report: dict[str, Any]) -> None:
+    try:
+        with _database() as connection:
+            connection.execute(
+                """INSERT INTO monthly_reports (user_id, year, month, report_json, generated_at)
+                   VALUES (%s, %s, %s, %s, %s)
+                   ON DUPLICATE KEY UPDATE
+                     report_json = VALUES(report_json),
+                     generated_at = VALUES(generated_at),
+                     updated_at = CURRENT_TIMESTAMP""",
+                (user_id, report["year"], report["month"],
+                 json.dumps(report, ensure_ascii=False),
+                 datetime.fromisoformat(report["generated_at"].replace("Z", "+00:00")).replace(tzinfo=None)),
+            )
+    except pymysql.MySQLError as exc:
+        raise RuntimeError(f"Không lưu được báo cáo vào MySQL: {exc}")
+
+
+def _load_reports(user_id: int, year: int | None, month: int | None) -> list[dict[str, Any]]:
+    clauses = ["user_id = %s"]
+    params: list[int] = [user_id]
+    if year is not None:
+        clauses.append("year = %s")
+        params.append(year)
+    if month is not None:
+        clauses.append("month = %s")
+        params.append(month)
+    try:
+        with _database() as connection:
+            records = connection.execute(
+                "SELECT report_json FROM monthly_reports WHERE " + " AND ".join(clauses)
+                + " ORDER BY year DESC, month DESC LIMIT 100",
+                params,
+            ).fetchall()
+        return [record["report_json"] if isinstance(record["report_json"], dict)
+                else json.loads(record["report_json"]) for record in records]
+    except (pymysql.MySQLError, json.JSONDecodeError) as exc:
+        raise RuntimeError(f"Không đọc được báo cáo từ MySQL: {exc}")
 
 
 class AnalyticsHandler(BaseHTTPRequestHandler):
@@ -166,7 +290,7 @@ class AnalyticsHandler(BaseHTTPRequestHandler):
         self.send_header("Content-Type", "application/json; charset=utf-8")
         self.send_header("Content-Length", str(len(body)))
         self.send_header("Access-Control-Allow-Origin", "*")
-        self.send_header("Access-Control-Allow-Headers", "Content-Type, X-User-Id")
+        self.send_header("Access-Control-Allow-Headers", "Content-Type, X-User-Id, X-User-Role")
         self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
         self.end_headers()
         self.wfile.write(body)
@@ -180,6 +304,14 @@ class AnalyticsHandler(BaseHTTPRequestHandler):
             raise ValueError("Body phải là JSON object")
         return value
 
+    def _user_id(self, requested: Any) -> int:
+        header_uid = (self.headers.get("X-User-Id") or "").strip()
+        is_admin = (self.headers.get("X-User-Role") or "").strip().upper() == "ADMIN"
+        has_requested = requested not in (None, "")
+        if header_uid and not (is_admin and has_requested):
+            return int(header_uid)
+        return int(requested if has_requested else "0")
+
     def do_OPTIONS(self) -> None:
         self._send(204, {})
 
@@ -189,16 +321,27 @@ class AnalyticsHandler(BaseHTTPRequestHandler):
         query = urllib.parse.parse_qs(parsed.query)
         if path in {"/", "/health"}:
             return self._send(200, {"service": "analytics-service", "status": "UP", "version": "1.0.0-midterm"})
-        if path not in {"/api/analytics/summary", "/api/analytics/trends", "/api/analytics/category-breakdown"}:
+        if path not in {"/api/analytics/summary", "/api/analytics/trends", "/api/analytics/category-breakdown", "/api/analytics/anomalies", "/api/analytics/reports"}:
             return self._send(404, {"error": "NOT_FOUND", "message": "Endpoint không tồn tại"})
         try:
-            user_id = int((query.get("user_id") or [self.headers.get("X-User-Id", "")])[0])
+            user_id = self._user_id((query.get("user_id") or [None])[0])
             if user_id <= 0:
                 raise ValueError("user_id phải là số nguyên dương")
             start = _date((query.get("from_date") or [None])[0])
             end = _date((query.get("to_date") or [None])[0])
             if start and end and start > end:
                 raise ValueError("from_date phải trước hoặc bằng to_date")
+            if path.endswith("/reports"):
+                year_raw = (query.get("year") or [None])[0]
+                month_raw = (query.get("month") or [None])[0]
+                year = int(year_raw) if year_raw not in (None, "") else None
+                month = int(month_raw) if month_raw not in (None, "") else None
+                if year is not None and not 2000 <= year <= 2100:
+                    raise ValueError("year phải trong khoảng 2000..2100")
+                if month is not None and not 1 <= month <= 12:
+                    raise ValueError("month phải trong khoảng 1..12")
+                return self._send(200, {"data": _load_reports(user_id, year, month),
+                                        "meta": {"user_id": user_id, "limit": 100}})
             rows = _period(_fetch_transactions(user_id, start, end), start, end)
             if path.endswith("/summary"):
                 data = summary(rows)
@@ -208,6 +351,8 @@ class AnalyticsHandler(BaseHTTPRequestHandler):
                     raise ValueError("months phải trong khoảng 1..36")
                 data = trends(rows, months)
                 data["anomalies"] = anomalies(rows)
+            elif path.endswith("/anomalies"):
+                data = anomalies(rows)
             else:
                 data = category_breakdown(rows)
             return self._send(200, {"data": data, "meta": {"user_id": user_id, "source": "transaction-service"}})
@@ -221,7 +366,7 @@ class AnalyticsHandler(BaseHTTPRequestHandler):
             return self._send(404, {"error": "NOT_FOUND", "message": "Endpoint không tồn tại"})
         try:
             body = self._body()
-            user_id = int(body.get("user_id", self.headers.get("X-User-Id", "0")))
+            user_id = self._user_id(body.get("user_id"))
             if user_id <= 0:
                 raise ValueError("user_id phải là số nguyên dương")
             start, end = _date(body.get("from_date")), _date(body.get("to_date"))
@@ -233,9 +378,9 @@ class AnalyticsHandler(BaseHTTPRequestHandler):
             report.update({"user_id": user_id, "year": end.year if end else date.today().year,
                            "month": end.month if end else date.today().month,
                            "category_breakdown": category_breakdown(rows),
-                           "anomalies": anomalies(rows), "generated_at": datetime.utcnow().isoformat(timespec="seconds") + "Z"})
+                           "anomalies": anomalies(rows), "generated_at": datetime.now(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z")})
             _save_report(user_id, report)
-            return self._send(201, {"data": report, "meta": {"stored": bool(MONGO_URI)}})
+            return self._send(201, {"data": report, "meta": {"stored": True, "database": "mysql"}})
         except (ValueError, json.JSONDecodeError) as exc:
             return self._send(400, {"error": "VALIDATION_ERROR", "message": str(exc)})
         except RuntimeError as exc:
@@ -246,5 +391,7 @@ class AnalyticsHandler(BaseHTTPRequestHandler):
 
 
 if __name__ == "__main__":
+    _init_database()
     print(f"Analytics Service (Native Python) listening on {HOST}:{PORT}")
     ThreadingHTTPServer((HOST, PORT), AnalyticsHandler).serve_forever()
+

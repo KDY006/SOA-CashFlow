@@ -186,3 +186,25 @@ func TestRouterMethodNotAllowed(t *testing.T) {
 		}
 	}
 }
+
+func TestAdminCanQueryOtherUsers(t *testing.T) {
+	r := httptest.NewRequest(http.MethodGet, "/api/integrations/accounts?user_id=2", nil)
+	r.Header.Set("X-User-Id", "1")
+	r.Header.Set("X-User-Role", "USER")
+	if got := userIDFrom(r); got != 1 {
+		t.Fatalf("user thường sửa ?user_id thì phải bị bỏ qua, được %d", got)
+	}
+	r.Header.Set("X-User-Role", "ADMIN")
+	if got := userIDFrom(r); got != 2 {
+		t.Fatalf("admin truyền ?user_id=2 thì phải xem user 2, được %d", got)
+	}
+	if forbiddenFor(r, 2) {
+		t.Fatal("admin xem dữ liệu user khác mà bị chặn")
+	}
+	noQuery := httptest.NewRequest(http.MethodGet, "/api/integrations/accounts", nil)
+	noQuery.Header.Set("X-User-Id", "1")
+	noQuery.Header.Set("X-User-Role", "ADMIN")
+	if got := userIDFrom(noQuery); got != 1 {
+		t.Fatalf("admin không truyền ?user_id thì xem của chính mình, được %d", got)
+	}
+}

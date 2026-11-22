@@ -30,6 +30,27 @@ public static class HttpHelper
         }
     }
 
+    public static long AuthUserId(HttpListenerRequest request) =>
+        long.TryParse(request.Headers["X-User-Id"], NumberStyles.None, CultureInfo.InvariantCulture, out var id) && id > 0 ? id : 0;
+
+    public static bool IsAdmin(HttpListenerRequest request) =>
+        string.Equals(request.Headers["X-User-Role"], "ADMIN", StringComparison.OrdinalIgnoreCase);
+
+    public static long ResolveUserId(HttpListenerRequest request)
+    {
+        var auth = AuthUserId(request);
+        var query = request.QueryString["user_id"];
+        if (auth > 0) return IsAdmin(request) && query is not null ? ParseUserId(query) : auth;
+        return ParseUserId(query);
+    }
+
+    public static long BodyUserId(HttpListenerRequest request, long bodyUserId, long fallbackUserId)
+    {
+        var auth = AuthUserId(request);
+        if (auth == 0) return bodyUserId > 0 ? bodyUserId : fallbackUserId;
+        return IsAdmin(request) && bodyUserId > 0 ? bodyUserId : auth;
+    }
+
     public static long ParseUserId(string? value)
     {
         if (value is null) return 1;

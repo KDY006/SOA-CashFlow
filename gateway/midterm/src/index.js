@@ -8,6 +8,7 @@ const { parse } = require('node:url');
 const config = require('./config');
 const { verifyJwt, extractBearerToken } = require('./jwt');
 const { forwardRequest } = require('./proxy');
+const { handleDocs } = require('./docs');
 
 // Bộ đếm Rate Limiting trong bộ nhớ (In-memory IP Sliding Window)
 const rateLimitMap = new Map();
@@ -77,6 +78,9 @@ const server = http.createServer((req, res) => {
   const parsedUrl = parse(req.url, true);
   const pathname = (parsedUrl.pathname || '/').replace(/\/+$/, '') || '/';
   const method = req.method.toUpperCase();
+
+  // 2b. Tài liệu API (Swagger UI) — /docs, /openapi.json, /openapi/<service>.json
+  if (method === 'GET' && handleDocs(pathname, res)) return;
 
   // 3. Endpoint thông tin Gateway & Health Check
   if (pathname === '/' || pathname === '/health') {

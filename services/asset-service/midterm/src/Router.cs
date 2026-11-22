@@ -13,7 +13,7 @@ public static class Router
         var response = context.Response;
         response.AddHeader("Access-Control-Allow-Origin", "*");
         response.AddHeader("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
-        response.AddHeader("Access-Control-Allow-Headers", "Content-Type");
+        response.AddHeader("Access-Control-Allow-Headers", "Content-Type, X-User-Id, X-User-Role");
 
         if (context.Request.HttpMethod == "OPTIONS")
         {
@@ -29,9 +29,10 @@ public static class Router
             object? result;
             int status = 200;
 
-            var headerUser = context.Request.Headers["x-user-id"];
-            var userId = HttpHelper.ParseUserId(!string.IsNullOrWhiteSpace(headerUser) ? headerUser : context.Request.QueryString["user_id"]);
+            var req = context.Request;
+            var userId = HttpHelper.ResolveUserId(req);
 
+            // --- HEALTH & ANALYTICS & THUẬT TOÁN ---
             if (path == "" || path == "/health")
                 result = new { service = "asset-service", status = "UP", version = "1.0.0-midterm" };
             else if (path == "/api/assets/net-worth" && method == "GET") 
@@ -40,24 +41,44 @@ public static class Router
                 result = AssetHandler.CalculateDepreciation(await HttpHelper.ReadBodyAsync<DepreciationInput>(context));
             else if (path == "/api/loans/calculate" && method == "POST") 
                 result = LoanHandler.CalculateLoan(await HttpHelper.ReadBodyAsync<LoanCalculationInput>(context));
+            
+            // --- ASSETS (TÀI SẢN) ---
             else if (path == "/api/assets" && method == "GET") 
                 result = AssetHandler.GetAssets(userId);
             else if (path == "/api/assets" && method == "POST") 
-                { result = AssetHandler.CreateAsset(await HttpHelper.ReadBodyAsync<AssetInput>(context)); status = 201; }
+                { var x = await HttpHelper.ReadBodyAsync<AssetInput>(context); result = AssetHandler.CreateAsset(x with { UserId = HttpHelper.BodyUserId(req, x.UserId, userId) }); status = 201; }
             else if (HttpHelper.TryParseId(path, "/api/assets/", out var assetId) && method == "GET") 
                 result = Database.GetById("assets", assetId, userId);
             else if (HttpHelper.TryParseId(path, "/api/assets/", out assetId) && method == "PUT") 
-                result = AssetHandler.UpdateAsset(assetId, userId, await HttpHelper.ReadBodyAsync<AssetInput>(context));
+                { var x = await HttpHelper.ReadBodyAsync<AssetInput>(context); result = AssetHandler.UpdateAsset(assetId, userId, x with { UserId = HttpHelper.BodyUserId(req, x.UserId, userId) }); }
+            else if (HttpHelper.TryParseId(path, "/api/assets/", out assetId) && method == "DELETE") 
+                result = AssetHandler.DeleteAsset(assetId, userId);
+
+            // --- LOANS (KHOẢN VAY) ---
             else if (path == "/api/loans" && method == "GET") 
                 result = LoanHandler.GetLoans(userId);
             else if (path == "/api/loans" && method == "POST") 
-                { result = LoanHandler.CreateLoan(await HttpHelper.ReadBodyAsync<LoanInput>(context)); status = 201; }
+                { var x = await HttpHelper.ReadBodyAsync<LoanInput>(context); result = LoanHandler.CreateLoan(x with { UserId = HttpHelper.BodyUserId(req, x.UserId, userId) }); status = 201; }
             else if (HttpHelper.TryParseId(path, "/api/loans/", out var loanId) && method == "GET") 
                 result = Database.GetById("loans", loanId, userId);
+            else if (HttpHelper.TryParseId(path, "/api/loans/", out loanId) && method == "PUT") 
+                { var x = await HttpHelper.ReadBodyAsync<LoanInput>(context); result = LoanHandler.UpdateLoan(loanId, userId, x with { UserId = HttpHelper.BodyUserId(req, x.UserId, userId) }); }
+            else if (HttpHelper.TryParseId(path, "/api/loans/", out loanId) && method == "DELETE") 
+                result = LoanHandler.DeleteLoan(loanId, userId);
+
+            // --- INVESTMENTS (ĐẦU TƯ) ---
             else if (path == "/api/investments" && method == "GET") 
                 result = InvestmentHandler.GetInvestments(userId);
             else if (path == "/api/investments" && method == "POST") 
-                { result = InvestmentHandler.CreateInvestment(await HttpHelper.ReadBodyAsync<InvestmentInput>(context)); status = 201; }
+                { var x = await HttpHelper.ReadBodyAsync<InvestmentInput>(context); result = InvestmentHandler.CreateInvestment(x with { UserId = HttpHelper.BodyUserId(req, x.UserId, userId) }); status = 201; }
+            else if (HttpHelper.TryParseId(path, "/api/investments/", out var invId) && method == "GET") 
+                result = Database.GetById("investments", invId, userId);
+            else if (HttpHelper.TryParseId(path, "/api/investments/", out invId) && method == "PUT") 
+                { var x = await HttpHelper.ReadBodyAsync<InvestmentInput>(context); result = InvestmentHandler.UpdateInvestment(invId, userId, x with { UserId = HttpHelper.BodyUserId(req, x.UserId, userId) }); }
+            else if (HttpHelper.TryParseId(path, "/api/investments/", out invId) && method == "DELETE") 
+                result = InvestmentHandler.DeleteInvestment(invId, userId);
+
+            // --- 404 NOT FOUND ---
             else 
                 { status = 404; result = new { error = "Endpoint not found" }; }
 

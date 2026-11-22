@@ -16,7 +16,7 @@ function sendJson(res, statusCode, data) {
     'Content-Type': 'application/json; charset=utf-8',
     'Access-Control-Allow-Origin': '*',
     'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-    'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-User-Id',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-User-Id, X-User-Role',
     'Content-Length': Buffer.byteLength(payload),
   });
   res.end(payload);
@@ -44,11 +44,29 @@ function parseJsonBody(req) {
   });
 }
 
-function resolveUserId(req, query, paramId) {
-  if (paramId && Number(paramId) > 0) return Number(paramId);
-  if (query.user_id && Number(query.user_id) > 0) return Number(query.user_id);
+// Lấy user id do Gateway inject (X-User-Id), null nếu gọi trực tiếp
+function headerUserIdFrom(req) {
   const headerUserId = req.headers['x-user-id'];
   if (headerUserId && Number(headerUserId) > 0) return Number(headerUserId);
+  return null;
+}
+
+// Kiểm tra quyền ADMIN từ header X-User-Role (không phân biệt hoa thường)
+function isAdmin(req) {
+  return String(req.headers['x-user-role'] || '').trim().toUpperCase() === 'ADMIN';
+}
+
+// Xác định user hiệu lực:
+// - Có X-User-Id: dùng header; chỉ ADMIN mới được chỉ định user khác (path/body/query user_id)
+// - Không có header (gọi nội bộ service-to-service): dùng path/body/query user_id, rồi mặc định
+function resolveUserId(req, query, paramId, bodyUserId) {
+  const requested = [paramId, bodyUserId, query.user_id].find((v) => v && Number(v) > 0);
+  const headerUserId = headerUserIdFrom(req);
+  if (headerUserId) {
+    if (isAdmin(req) && requested) return Number(requested);
+    return headerUserId;
+  }
+  if (requested) return Number(requested);
   return 1; // Mặc định user 1 cho demo
 }
 
@@ -134,7 +152,7 @@ const server = http.createServer(async (req, res) => {
     // 5. Gửi thông báo mới (POST /api/notifications/send hoặc POST /api/notifications)
     if ((pathname === '/api/notifications/send' || pathname === '/api/notifications') && method === 'POST') {
       const body = await parseJsonBody(req);
-      const userId = body.userId || body.user_id || resolveUserId(req, query);
+      const userId = resolveUserId(req, query, null, body.userId || body.user_id);
       const { title, message, type = 'SYSTEM', metadata = {} } = body;
 
       if (!title || !message) {
@@ -168,7 +186,9 @@ const server = http.createServer(async (req, res) => {
     if (readMatch && method === 'PUT') {
       const notifId = readMatch[1];
       const userId = resolveUserId(req, query);
-      const updated = store.markAsRead(notifId, userId);
+      // ADMIN (không chỉ định user_id) được đánh dấu bất kỳ thông báo nào
+      const ownerFilter = isAdmin(req) && headerUserIdFrom(req) && !query.user_id ? null : userId;
+      const updated = store.markAsRead(notifId, ownerFilter);
 
       if (!updated) {
         return sendJson(res, 404, {

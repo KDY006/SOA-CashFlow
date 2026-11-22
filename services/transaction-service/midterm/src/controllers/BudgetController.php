@@ -4,6 +4,7 @@ namespace App\Controllers;
 use App\Models\Budget;
 use App\Models\Transaction;
 use App\Helpers\Response;
+use App\Helpers\Auth;
 
 class BudgetController {
     private Budget $budgetModel;
@@ -15,20 +16,11 @@ class BudgetController {
     }
 
     /**
-     * Lấy user_id từ query param, request body, hoặc header X-User-Id (mặc định là 1)
+     * Lấy user_id từ header X-User-Id (gateway); ADMIN hoặc lời gọi trực tiếp không có header
+     * mới dùng query param / request body user_id (mặc định là 1)
      */
     private function resolveUserId(?array $body = null): int {
-        if (!empty($_GET['user_id'])) {
-            return (int) $_GET['user_id'];
-        }
-        if ($body && !empty($body['user_id'])) {
-            return (int) $body['user_id'];
-        }
-        $headerUserId = $_SERVER['HTTP_X_USER_ID'] ?? null;
-        if ($headerUserId) {
-            return (int) $headerUserId;
-        }
-        return 1;
+        return Auth::resolveUserId($body);
     }
 
     /**
@@ -92,7 +84,7 @@ class BudgetController {
      */
     public function show(int $id): void {
         $budget = $this->budgetModel->getById($id);
-        if (!$budget) {
+        if (!$budget || Auth::forbiddenFor((int) $budget['user_id'])) {
             Response::error('Không tìm thấy ngân sách với ID này', 404);
         }
         Response::success($budget, 'Lấy chi tiết ngân sách thành công');
@@ -137,7 +129,7 @@ class BudgetController {
      */
     public function update(int $id): void {
         $budget = $this->budgetModel->getById($id);
-        if (!$budget) {
+        if (!$budget || Auth::forbiddenFor((int) $budget['user_id'])) {
             Response::error('Không tìm thấy ngân sách để cập nhật', 404);
         }
 
@@ -156,7 +148,7 @@ class BudgetController {
      */
     public function delete(int $id): void {
         $budget = $this->budgetModel->getById($id);
-        if (!$budget) {
+        if (!$budget || Auth::forbiddenFor((int) $budget['user_id'])) {
             Response::error('Không tìm thấy ngân sách để xóa', 404);
         }
 

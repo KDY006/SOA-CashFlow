@@ -29,6 +29,40 @@ public static class LoanHandler
         return Database.GetById("loans", id, x.UserId);
     }
 
+    public static object UpdateLoan(long id, long userId, LoanInput x)
+    {
+        ValidateLoan(x);
+        if (x.UserId != userId) throw new ArgumentException("user_id must match the requested user");
+        
+        // Kiểm tra xem khoản vay có tồn tại hay không
+        _ = Database.GetById("loans", id, userId);
+
+        using var c = Database.GetConnection();
+        using var q = new MySqlCommand("UPDATE loans SET loan_title=@title, principal_amount=@principal, interest_rate=@rate, term_months=@term, start_date=@date WHERE id=@id AND user_id=@user", c);
+        q.Parameters.AddWithValue("@title", x.LoanTitle);
+        q.Parameters.AddWithValue("@principal", x.PrincipalAmount);
+        q.Parameters.AddWithValue("@rate", x.InterestRate);
+        q.Parameters.AddWithValue("@term", x.TermMonths);
+        q.Parameters.AddWithValue("@date", x.StartDate);
+        q.Parameters.AddWithValue("@id", id);
+        q.Parameters.AddWithValue("@user", userId);
+        q.ExecuteNonQuery();
+
+        return Database.GetById("loans", id, userId);
+    }
+
+    public static object DeleteLoan(long id, long userId)
+    {
+        using var c = Database.GetConnection();
+        using var q = new MySqlCommand("DELETE FROM loans WHERE id=@id AND user_id=@user", c);
+        q.Parameters.AddWithValue("@id", id);
+        q.Parameters.AddWithValue("@user", userId);
+        var rowsAffected = q.ExecuteNonQuery();
+        
+        if (rowsAffected == 0) throw new KeyNotFoundException("Loan not found or unauthorized");
+        return new { message = "Loan deleted successfully", id };
+    }
+
     public static object CalculateLoan(LoanCalculationInput x)
     {
         if (x.PrincipalAmount <= 0 || x.InterestRate < 0 || x.InterestRate > 999.99m || x.TermMonths <= 0)
@@ -51,7 +85,12 @@ public static class LoanHandler
 
     private static void ValidateLoan(LoanInput x)
     {
-        if (x.UserId <= 0 || string.IsNullOrWhiteSpace(x.LoanTitle) || x.PrincipalAmount <= 0 || x.InterestRate < 0 || x.TermMonths <= 0 || x.StartDate == default)
-            throw new ArgumentException("Invalid loan values");
+        if (x.UserId <= 0 
+            || string.IsNullOrWhiteSpace(x.LoanTitle) || x.LoanTitle.Length > 150 
+            || x.PrincipalAmount <= 0 
+            || x.InterestRate < 0 || x.InterestRate > 999.99m 
+            || x.TermMonths <= 0 
+            || x.StartDate == default)
+            throw new ArgumentException("Invalid loan values or interest rate out of range (0 to 999.99)");
     }
 }

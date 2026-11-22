@@ -1,47 +1,51 @@
-# Analytics Service - Giữa kỳ (Python thuần)
+# Analytics Service - Giữa kỳ
 
-Thành viên phụ trách: **Lê Khải Hoàn **. API dùng `http.server` và `urllib` của Python, không dùng FastAPI/Flask. Port mặc định `8084`.
+Analytics Service dùng Python Native để nhận yêu cầu qua HTTP, gọi Transaction Service lấy giao dịch và lưu báo cáo tổng hợp vào MySQL 8 (`analytics_db`). **PyMySQL là thư viện Python kết nối tới MySQL**, không phải database riêng.
 
-## Chức năng
+## API hiện có
 
-- `GET /health`: health check.
-- `GET /api/analytics/summary?user_id=1&from_date=2026-01-01&to_date=2026-01-31`: tổng thu, tổng chi, dòng tiền ròng.
-- `GET /api/analytics/category-breakdown?user_id=1&from_date=...&to_date=...`: cơ cấu chi phí và tỷ lệ theo danh mục.
-- `GET /api/analytics/trends?user_id=1&months=6`: tổng hợp tháng, dự báo dòng tiền tháng tiếp theo bằng trung bình tối đa 3 tháng gần nhất và danh sách khoản chi bất thường.
-- `POST /api/analytics/aggregate`: tổng hợp báo cáo, upsert vào MongoDB nếu `MONGO_URI` được cấu hình. Body nhận `user_id`, `from_date`, `to_date`; có thể truyền `transactions` để chạy báo cáo từ dữ liệu gửi trực tiếp.
+- `GET /health` - kiểm tra trạng thái service.
+- `GET /api/analytics/summary?from_date=2026-01-01&to_date=2026-01-31` - tổng thu, tổng chi, dòng tiền ròng và số giao dịch.
+- `GET /api/analytics/category-breakdown?from_date=2026-01-01&to_date=2026-01-31` - tổng chi theo danh mục và tỷ lệ phần trăm.
+- `GET /api/analytics/trends?months=6` - xu hướng thu chi theo tháng và dự báo dòng tiền tháng tiếp theo.
+- `GET /api/analytics/anomalies?from_date=2026-01-01&to_date=2026-01-31` - phát hiện khoản chi bất thường.
+- `POST /api/analytics/aggregate` - lấy giao dịch, tổng hợp báo cáo tháng và lưu/cập nhật vào MySQL. Có thể gửi `transactions` trực tiếp trong JSON body để demo.
+- `GET /api/analytics/reports?year=2026&month=1` - đọc báo cáo đã lưu; bỏ bộ lọc để lấy tối đa 100 báo cáo gần nhất.
 
-Ví dụ body:
+Khi request đi qua Gateway, `X-User-Id` được lấy từ JWT. Chỉ ADMIN mới có thể chọn `user_id` khác. Nếu gọi service trực tiếp để demo, truyền `user_id` trên query hoặc body.
 
-```json
-{
-  "user_id": 1,
-  "from_date": "2026-01-01",
-  "to_date": "2026-01-31",
-  "transactions": [
-    {"id": 10, "amount": 120000, "type": "EXPENSE", "category": "Ăn uống", "transaction_date": "2026-01-12"},
-    {"id": 11, "amount": 15000000, "type": "INCOME", "category": "Lương", "transaction_date": "2026-01-25"}
-  ]
-}
+## Liên kết với các service khác
+
+Analytics gọi `GET /api/transactions` tại Transaction Service, truyền `user_id`, khoảng ngày, `limit`/`offset` và `X-User-Id`. Phân trang được đọc theo từng đợt để không bỏ sót giao dịch khi người dùng có nhiều dữ liệu. Gateway chuyển tiếp `/api/analytics/*` tới Analytics Service.
+
+Quản lý ngân sách thuộc Transaction Service (`/api/budgets` và `/api/budgets/progress`), nên Analytics không tạo API CRUD ngân sách trùng lặp.
+
+## Database và cấu hình
+
+Bảng `monthly_reports` được tạo bởi `db/init-analytics-db.sql`. Compose chạy service `analytics-db` với image `mysql:8.0` và volume riêng để dữ liệu tồn tại sau khi tạo lại container. Các biến nằm ở `.env` gốc:
+
+- `ANALYTICS_DB_HOST=analytics-db`
+- `ANALYTICS_DB_PORT=3306`
+- `ANALYTICS_DB_NAME=analytics_db`
+- `ANALYTICS_DB_USER=root`
+- `ANALYTICS_DB_PASSWORD=root_password`
+
+Không dùng SQLite hoặc MongoDB. Mỗi microservice giữ database riêng; Analytics chỉ lấy giao dịch qua HTTP API, không đọc trực tiếp `transaction_db`.
+
+## Chạy toàn bộ backend giữa kỳ
+
+Từ thư mục gốc project:
+
+```bash
+docker compose -f docker-compose.midterm.yml up --build
 ```
 
-Response dùng JSON UTF-8, lỗi có mã HTTP phù hợp (`400`, `404`, `502`). Bộ phân tích chỉ tính `INCOME` và `EXPENSE`, bỏ qua `TRANSFER` khỏi dòng tiền. Phát hiện bất thường dùng median/MAD theo danh mục, cần tối thiểu 4 khoản chi để đánh dấu.
+Sau khi các container khởi động, kiểm tra `http://localhost:8084/health`. Khi chạy trong Compose, hostname `analytics-db` và `transaction-service` được phân giải nội bộ.
 
-## Nguồn dữ liệu và MongoDB
+## Chạy riêng Analytics và dependencies
 
-Mặc định API truy vấn `GET {TRANSACTION_SERVICE_URL}/api/transactions?user_id=...&limit=1000` bằng `urllib`; mặc định URL là `http://transaction-service:8082`. Có thể gửi `X-User-Id` thay query parameter. `POST /aggregate` cũng nhận danh sách giao dịch trực tiếp để demo độc lập.
-
-`MONGO_URI` là tùy chọn. Khi có URI, báo cáo được upsert vào `analytics_db.monthly_reports` theo khóa `(user_id, year, month)`; khi không cấu hình, API vẫn tính và trả kết quả nhưng không lưu. MongoDB URI chạy compose được khai báo trong `docker-compose.midterm.yml`.
-
-## Chạy local
-
-```powershell
-$env:TRANSACTION_SERVICE_URL = "http://localhost:8082"
-$env:MONGO_URI = "mongodb://mongo_admin:mongo_password@localhost:27017/analytics_db?authSource=admin"
-python .\src\main.py
+```bash
+docker compose -f docker-compose.midterm.yml up --build analytics-db transaction-service analytics-service
 ```
 
-Hoặc chạy không Mongo bằng cách bỏ `MONGO_URI`. Python 3.11+; MongoDB driver được cài từ `requirements.txt`.
-
-## Chạy Docker
-
-Compose giữa kỳ cần build từ thư mục `services/analytics-service/midterm`. Container lắng nghe `8084` và kết nối Transaction/Mongo qua network nội bộ.
+Docker Compose chỉ dùng một `.env` ở thư mục gốc; file này chứa các biến theo prefix của từng service, ví dụ `ANALYTICS_DB_*`.

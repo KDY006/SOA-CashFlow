@@ -102,8 +102,9 @@ function getByUser(userId, { limit = 50, offset = 0, unreadOnly = false } = {}) 
  */
 function markAsRead(id, userId) {
   const notifId = Number(id);
-  const uid = Number(userId);
-  const found = notifications.find((n) => n.id === notifId && n.userId === uid);
+  // userId null => bỏ qua kiểm tra chủ sở hữu (dành cho ADMIN)
+  const uid = userId == null ? null : Number(userId);
+  const found = notifications.find((n) => n.id === notifId && (uid === null || n.userId === uid));
 
   if (found) {
     found.isRead = true;

@@ -13,8 +13,17 @@ internal static class Program
         
         using var listener = new HttpListener();
         listener.Prefixes.Add($"http://{host}:{port}/");
-        listener.Start();
-        Console.WriteLine($"[Asset Service Native C#] Running on http://{host}:{port}/...");
+        
+        try
+        {
+            listener.Start();
+            Console.WriteLine($"[Asset Service Native C#] Running on http://{host}:{port}/...");
+        }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine($"[Asset Service] Failed to start HttpListener: {ex.Message}");
+            return;
+        }
 
         while (listener.IsListening)
         {

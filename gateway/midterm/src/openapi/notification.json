@@ -1,0 +1,861 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "Notification Service (Node.js)",
+    "version": "1.0.0-midterm",
+    "description": "Notification Service viết bằng **Node.js thuần (node:http, zero-dependency)**, chạy nội bộ ở cổng **8086**, truy cập qua API Gateway (:8080) với prefix `/api/notifications`.\n\nLưu thông báo trong bộ nhớ (in-memory, có seed dữ liệu mẫu cho user 1 và 2), đẩy realtime qua **Server-Sent Events** và đồng bộ giữa các instance qua **Redis Pub/Sub**.\n\n- Xác định user theo thứ tự: path `{userId}` → query `user_id` → body `userId`/`user_id` (POST) → header `X-User-Id` (Gateway gắn từ JWT) → mặc định `1`.\n- Dấu `/` cuối đường dẫn được bỏ qua.\n- `GET /health` của service không đi qua Gateway được (Gateway tự trả `/health` của nó)."
+  },
+  "servers": [
+    {
+      "url": "/",
+      "description": "Qua API Gateway"
+    }
+  ],
+  "tags": [
+    {
+      "name": "Thông báo",
+      "description": "Lịch sử, tạo mới, đánh dấu đã đọc"
+    },
+    {
+      "name": "Realtime (SSE)",
+      "description": "Kênh đẩy thông báo thời gian thực"
+    }
+  ],
+  "security": [
+    {
+      "bearerAuth": []
+    }
+  ],
+  "paths": {
+    "/api/notifications": {
+      "get": {
+        "tags": [
+          "Thông báo"
+        ],
+        "operationId": "listMyNotifications",
+        "summary": "Lấy danh sách thông báo của user hiện tại",
+        "description": "Mới nhất trước. `total` là tổng số sau khi lọc, `unreadCount` là số chưa đọc của user.",
+        "parameters": [
+          {
+            "name": "user_id",
+            "in": "query",
+            "required": false,
+            "description": "**Chỉ ADMIN dùng được** — xem dữ liệu của user khác (vd 1, 2, 3...). Tài khoản USER thường: tham số này bị bỏ qua, luôn trả dữ liệu của chính mình (lấy userId từ JWT). Bỏ trống = dữ liệu của user đang đăng nhập.",
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "description": "Số bản ghi tối đa",
+            "schema": {
+              "type": "integer",
+              "default": 50
+            },
+            "example": 20
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "description": "Vị trí bắt đầu",
+            "schema": {
+              "type": "integer",
+              "default": 0
+            },
+            "example": 0
+          },
+          {
+            "name": "unread_only",
+            "in": "query",
+            "required": false,
+            "description": "Chỉ lấy thông báo chưa đọc (chỉ đúng khi giá trị là chuỗi \"true\")",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "true",
+                "false"
+              ],
+              "default": "false"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Danh sách thông báo",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotificationListResponse"
+                },
+                "example": {
+                  "success": true,
+                  "userId": 1,
+                  "items": [
+                    {
+                      "id": 1,
+                      "userId": 1,
+                      "type": "BUDGET_ALERT",
+                      "title": "Cảnh báo Ngân sách tháng 10/2026",
+                      "message": "Giao dịch gần nhất đã làm ngân sách danh mục 'Ăn uống & Cà phê' vượt hạn mức (Đã chi 5,450,000 / 5,000,000 VND).",
+                      "metadata": {
+                        "categoryId": 3,
+                        "limit": 5000000,
+                        "spent": 5450000,
+                        "overAmount": 450000
+                      },
+                      "isRead": false,
+                      "createdAt": "2026-10-20T07:30:00.000Z"
+                    },
+                    {
+                      "id": 2,
+                      "userId": 1,
+                      "type": "CASHFLOW_ANOMALY",
+                      "title": "Phát hiện Chi tiêu Bất thường (Analytics)",
+                      "message": "Khoản chi 3,500,000 VND cho Tiền nhà & Tiện ích vượt xa mức trung vị chi tiêu thông thường.",
+                      "metadata": {
+                        "amount": 3500000,
+                        "category": "Tiền nhà & Tiện ích",
+                        "median": 450000
+                      },
+                      "isRead": false,
+                      "createdAt": "2026-10-20T04:30:00.000Z"
+                    }
+                  ],
+                  "total": 3,
+                  "unreadCount": 2
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Thiếu hoặc sai JWT (do Gateway trả về)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotificationError"
+                },
+                "example": {
+                  "success": false,
+                  "error": "UNAUTHORIZED",
+                  "message": "Yêu cầu token xác thực (Authorization: Bearer <token>) để truy cập endpoint này."
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Thông báo"
+        ],
+        "operationId": "createNotification",
+        "summary": "Tạo và phát thông báo mới (alias của /send)",
+        "description": "Giống hệt `POST /api/notifications/send`.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SendNotificationRequest"
+              },
+              "example": {
+                "userId": 1,
+                "title": "Biến động số dư lớn",
+                "message": "Tài khoản VCB + 15.000.000 đ. Số dư: 30.250.000 đ",
+                "type": "LARGE_TRANSACTION",
+                "metadata": {
+                  "bank_tx_id": 101,
+                  "external_ref": "FT26293001234"
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Đã lưu và phát thông báo (SSE + Redis Pub/Sub)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SendNotificationResponse"
+                },
+                "example": {
+                  "success": true,
+                  "message": "Tạo và phát thông báo thành công",
+                  "data": {
+                    "id": 5,
+                    "userId": 1,
+                    "type": "LARGE_TRANSACTION",
+                    "title": "Biến động số dư lớn",
+                    "message": "Tài khoản VCB + 15.000.000 đ. Số dư: 30.250.000 đ",
+                    "metadata": {
+                      "bank_tx_id": 101,
+                      "external_ref": "FT26293001234"
+                    },
+                    "isRead": false,
+                    "createdAt": "2026-10-20T09:45:12.345Z"
+                  },
+                  "realtimeDelivered": true,
+                  "activeClients": 1
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Thiếu title hoặc message",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotificationError"
+                },
+                "example": {
+                  "success": false,
+                  "error": "VALIDATION_ERROR",
+                  "message": "Tiêu đề (title) và nội dung (message) là bắt buộc"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Thiếu hoặc sai JWT (do Gateway trả về)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotificationError"
+                },
+                "example": {
+                  "success": false,
+                  "error": "UNAUTHORIZED",
+                  "message": "Yêu cầu token xác thực (Authorization: Bearer <token>) để truy cập endpoint này."
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Lỗi xử lý (vd JSON body sai định dạng, payload > 1MB)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotificationError"
+                },
+                "example": {
+                  "success": false,
+                  "error": "INTERNAL_SERVER_ERROR",
+                  "message": "Định dạng JSON gửi lên không hợp lệ"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/notifications/send": {
+      "post": {
+        "tags": [
+          "Thông báo"
+        ],
+        "operationId": "sendNotification",
+        "summary": "Gửi thông báo mới cho người dùng",
+        "description": "Lưu thông báo, đẩy realtime qua SSE tới các client đang mở `/stream` của user đó và publish sang Redis. `userId` lấy từ body (`userId` hoặc `user_id`), không có thì dùng user trong JWT. `type` được chuyển in hoa (mặc định `SYSTEM`). Được integration-service gọi nội bộ (LARGE_TRANSACTION, TRANSACTION_REJECTED, BUDGET_ALERT).",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SendNotificationRequest"
+              },
+              "example": {
+                "userId": 1,
+                "title": "Biến động số dư lớn",
+                "message": "Tài khoản VCB + 15.000.000 đ. Số dư: 30.250.000 đ",
+                "type": "LARGE_TRANSACTION",
+                "metadata": {
+                  "bank_tx_id": 101,
+                  "external_ref": "FT26293001234"
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Đã lưu và phát thông báo (SSE + Redis Pub/Sub)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SendNotificationResponse"
+                },
+                "example": {
+                  "success": true,
+                  "message": "Tạo và phát thông báo thành công",
+                  "data": {
+                    "id": 5,
+                    "userId": 1,
+                    "type": "LARGE_TRANSACTION",
+                    "title": "Biến động số dư lớn",
+                    "message": "Tài khoản VCB + 15.000.000 đ. Số dư: 30.250.000 đ",
+                    "metadata": {
+                      "bank_tx_id": 101,
+                      "external_ref": "FT26293001234"
+                    },
+                    "isRead": false,
+                    "createdAt": "2026-10-20T09:45:12.345Z"
+                  },
+                  "realtimeDelivered": true,
+                  "activeClients": 1
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Thiếu title hoặc message",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotificationError"
+                },
+                "example": {
+                  "success": false,
+                  "error": "VALIDATION_ERROR",
+                  "message": "Tiêu đề (title) và nội dung (message) là bắt buộc"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Thiếu hoặc sai JWT (do Gateway trả về)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotificationError"
+                },
+                "example": {
+                  "success": false,
+                  "error": "UNAUTHORIZED",
+                  "message": "Yêu cầu token xác thực (Authorization: Bearer <token>) để truy cập endpoint này."
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Lỗi xử lý (vd JSON body sai định dạng, payload > 1MB)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotificationError"
+                },
+                "example": {
+                  "success": false,
+                  "error": "INTERNAL_SERVER_ERROR",
+                  "message": "Định dạng JSON gửi lên không hợp lệ"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/notifications/user/{userId}": {
+      "get": {
+        "tags": [
+          "Thông báo"
+        ],
+        "operationId": "listUserNotifications",
+        "summary": "Lấy lịch sử thông báo theo userId",
+        "description": "⚠️ Service không đối chiếu `userId` với JWT: user đăng nhập có thể xem thông báo của userId khác.",
+        "parameters": [
+          {
+            "name": "userId",
+            "in": "path",
+            "required": true,
+            "description": "ID user. USER thường chỉ xem được của chính mình (id khác → 404); ADMIN xem được mọi user.",
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "example": 1
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "description": "Số bản ghi tối đa",
+            "schema": {
+              "type": "integer",
+              "default": 50
+            },
+            "example": 20
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "description": "Vị trí bắt đầu",
+            "schema": {
+              "type": "integer",
+              "default": 0
+            },
+            "example": 0
+          },
+          {
+            "name": "unread_only",
+            "in": "query",
+            "required": false,
+            "description": "Chỉ lấy thông báo chưa đọc (chỉ đúng khi giá trị là chuỗi \"true\")",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "true",
+                "false"
+              ],
+              "default": "false"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Danh sách thông báo",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotificationListResponse"
+                },
+                "example": {
+                  "success": true,
+                  "userId": 1,
+                  "items": [
+                    {
+                      "id": 1,
+                      "userId": 1,
+                      "type": "BUDGET_ALERT",
+                      "title": "Cảnh báo Ngân sách tháng 10/2026",
+                      "message": "Giao dịch gần nhất đã làm ngân sách danh mục 'Ăn uống & Cà phê' vượt hạn mức (Đã chi 5,450,000 / 5,000,000 VND).",
+                      "metadata": {
+                        "categoryId": 3,
+                        "limit": 5000000,
+                        "spent": 5450000,
+                        "overAmount": 450000
+                      },
+                      "isRead": false,
+                      "createdAt": "2026-10-20T07:30:00.000Z"
+                    },
+                    {
+                      "id": 2,
+                      "userId": 1,
+                      "type": "CASHFLOW_ANOMALY",
+                      "title": "Phát hiện Chi tiêu Bất thường (Analytics)",
+                      "message": "Khoản chi 3,500,000 VND cho Tiền nhà & Tiện ích vượt xa mức trung vị chi tiêu thông thường.",
+                      "metadata": {
+                        "amount": 3500000,
+                        "category": "Tiền nhà & Tiện ích",
+                        "median": 450000
+                      },
+                      "isRead": false,
+                      "createdAt": "2026-10-20T04:30:00.000Z"
+                    }
+                  ],
+                  "total": 3,
+                  "unreadCount": 2
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Thiếu hoặc sai JWT (do Gateway trả về)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotificationError"
+                },
+                "example": {
+                  "success": false,
+                  "error": "UNAUTHORIZED",
+                  "message": "Yêu cầu token xác thực (Authorization: Bearer <token>) để truy cập endpoint này."
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/notifications/{id}/read": {
+      "put": {
+        "tags": [
+          "Thông báo"
+        ],
+        "operationId": "markNotificationRead",
+        "summary": "Đánh dấu một thông báo là đã đọc",
+        "description": "Chỉ thành công khi thông báo thuộc về user đã xác định (JWT hoặc `user_id`). Không cần request body.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "ID thông báo",
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "example": 1
+          },
+          {
+            "name": "user_id",
+            "in": "query",
+            "required": false,
+            "description": "**Chỉ ADMIN dùng được** — xem dữ liệu của user khác (vd 1, 2, 3...). Tài khoản USER thường: tham số này bị bỏ qua, luôn trả dữ liệu của chính mình (lấy userId từ JWT). Bỏ trống = dữ liệu của user đang đăng nhập.",
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Đã đánh dấu đã đọc",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MarkReadResponse"
+                },
+                "example": {
+                  "success": true,
+                  "message": "Đã đánh dấu thông báo là đã đọc",
+                  "data": {
+                    "id": 1,
+                    "userId": 1,
+                    "type": "BUDGET_ALERT",
+                    "title": "Cảnh báo Ngân sách tháng 10/2026",
+                    "message": "Giao dịch gần nhất đã làm ngân sách danh mục 'Ăn uống & Cà phê' vượt hạn mức (Đã chi 5,450,000 / 5,000,000 VND).",
+                    "metadata": {
+                      "categoryId": 3,
+                      "limit": 5000000,
+                      "spent": 5450000,
+                      "overAmount": 450000
+                    },
+                    "isRead": true,
+                    "createdAt": "2026-10-20T07:30:00.000Z",
+                    "readAt": "2026-10-20T09:50:00.000Z"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Thiếu hoặc sai JWT (do Gateway trả về)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotificationError"
+                },
+                "example": {
+                  "success": false,
+                  "error": "UNAUTHORIZED",
+                  "message": "Yêu cầu token xác thực (Authorization: Bearer <token>) để truy cập endpoint này."
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Không tìm thấy thông báo của user",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotificationError"
+                },
+                "example": {
+                  "success": false,
+                  "message": "Không tìm thấy thông báo ID 99 của người dùng 1"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/notifications/read-all": {
+      "put": {
+        "tags": [
+          "Thông báo"
+        ],
+        "operationId": "markAllNotificationsRead",
+        "summary": "Đánh dấu tất cả thông báo là đã đọc",
+        "description": "Không cần request body.",
+        "parameters": [
+          {
+            "name": "user_id",
+            "in": "query",
+            "required": false,
+            "description": "**Chỉ ADMIN dùng được** — xem dữ liệu của user khác (vd 1, 2, 3...). Tài khoản USER thường: tham số này bị bỏ qua, luôn trả dữ liệu của chính mình (lấy userId từ JWT). Bỏ trống = dữ liệu của user đang đăng nhập.",
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Số thông báo được cập nhật",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MarkAllReadResponse"
+                },
+                "example": {
+                  "success": true,
+                  "message": "Đã đánh dấu 2 thông báo là đã đọc",
+                  "updatedCount": 2
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Thiếu hoặc sai JWT (do Gateway trả về)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotificationError"
+                },
+                "example": {
+                  "success": false,
+                  "error": "UNAUTHORIZED",
+                  "message": "Yêu cầu token xác thực (Authorization: Bearer <token>) để truy cập endpoint này."
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/notifications/stream": {
+      "get": {
+        "tags": [
+          "Realtime (SSE)"
+        ],
+        "operationId": "notificationStream",
+        "summary": "Mở kênh thông báo realtime (Server-Sent Events)",
+        "description": "Kết nối giữ mở (`text/event-stream`). Sự kiện:\n- `event: connected` — gửi ngay khi kết nối, `data` = `{ type: \"CONNECTED\", message, timestamp }`\n- `event: notification` — mỗi thông báo mới của user, `data` = object Notification (JSON)\n- `: keep-alive ping` — comment heartbeat mỗi 25 giây\n\n⚠️ **Swagger UI không hiển thị được stream** (request sẽ treo chờ). Hãy thử bằng `curl -N -H \"Authorization: Bearer <token>\" http://localhost:8080/api/notifications/stream` hoặc `EventSource` trong trình duyệt (EventSource không gửi được header Authorization → cần Gateway chạy với `GATEWAY_AUTH_STRICT=false` hoặc proxy có gắn token). Lưu ý Gateway đặt timeout 15s cho request tới service.",
+        "parameters": [
+          {
+            "name": "user_id",
+            "in": "query",
+            "required": false,
+            "description": "**Chỉ ADMIN dùng được** — xem dữ liệu của user khác (vd 1, 2, 3...). Tài khoản USER thường: tham số này bị bỏ qua, luôn trả dữ liệu của chính mình (lấy userId từ JWT). Bỏ trống = dữ liệu của user đang đăng nhập.",
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Luồng sự kiện SSE",
+            "content": {
+              "text/event-stream": {
+                "schema": {
+                  "type": "string"
+                },
+                "example": "event: connected\ndata: {\"type\":\"CONNECTED\",\"message\":\"Đã kết nối thành công kênh thông báo thời gian thực (SSE) cho User ID: 1\",\"timestamp\":\"2026-10-20T09:40:00.000Z\"}\n\nevent: notification\ndata: {\"id\":5,\"userId\":1,\"type\":\"LARGE_TRANSACTION\",\"title\":\"Biến động số dư lớn\",\"message\":\"Tài khoản VCB + 15.000.000 đ. Số dư: 30.250.000 đ\",\"metadata\":{\"bank_tx_id\":101,\"external_ref\":\"FT26293001234\"},\"isRead\":false,\"createdAt\":\"2026-10-20T09:45:12.345Z\"}\n\n: keep-alive ping\n\n"
+              }
+            }
+          },
+          "401": {
+            "description": "Thiếu hoặc sai JWT (do Gateway trả về)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotificationError"
+                },
+                "example": {
+                  "success": false,
+                  "error": "UNAUTHORIZED",
+                  "message": "Yêu cầu token xác thực (Authorization: Bearer <token>) để truy cập endpoint này."
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "bearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT"
+      }
+    },
+    "schemas": {
+      "NotificationError": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "example": false
+          },
+          "error": {
+            "type": "string",
+            "example": "VALIDATION_ERROR"
+          },
+          "message": {
+            "type": "string"
+          }
+        }
+      },
+      "Notification": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "example": 1
+          },
+          "userId": {
+            "type": "integer",
+            "example": 1
+          },
+          "type": {
+            "type": "string",
+            "description": "Vd SYSTEM, BUDGET_ALERT, CASHFLOW_ANOMALY, LOAN_REMINDER, LARGE_TRANSACTION, TRANSACTION_REJECTED",
+            "example": "BUDGET_ALERT"
+          },
+          "title": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          },
+          "metadata": {
+            "type": "object",
+            "additionalProperties": true
+          },
+          "isRead": {
+            "type": "boolean"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "readAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Chỉ có sau khi đánh dấu đã đọc"
+          }
+        }
+      },
+      "NotificationListResponse": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean"
+          },
+          "userId": {
+            "type": "integer"
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Notification"
+            }
+          },
+          "total": {
+            "type": "integer",
+            "description": "Tổng số thông báo sau khi lọc (trước phân trang)"
+          },
+          "unreadCount": {
+            "type": "integer"
+          }
+        }
+      },
+      "SendNotificationRequest": {
+        "type": "object",
+        "required": [
+          "title",
+          "message"
+        ],
+        "properties": {
+          "userId": {
+            "type": "integer",
+            "description": "Người nhận (hoặc dùng `user_id`). Bỏ trống → user trong JWT",
+            "example": 1
+          },
+          "user_id": {
+            "type": "integer",
+            "description": "Tên khác của userId"
+          },
+          "title": {
+            "type": "string",
+            "example": "Biến động số dư lớn"
+          },
+          "message": {
+            "type": "string",
+            "example": "Tài khoản VCB + 15.000.000 đ. Số dư: 30.250.000 đ"
+          },
+          "type": {
+            "type": "string",
+            "default": "SYSTEM",
+            "example": "LARGE_TRANSACTION"
+          },
+          "metadata": {
+            "type": "object",
+            "additionalProperties": true,
+            "default": {}
+          }
+        }
+      },
+      "SendNotificationResponse": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean"
+          },
+          "message": {
+            "type": "string"
+          },
+          "data": {
+            "$ref": "#/components/schemas/Notification"
+          },
+          "realtimeDelivered": {
+            "type": "boolean",
+            "description": "Có ít nhất 1 client SSE nhận được"
+          },
+          "activeClients": {
+            "type": "integer",
+            "description": "Số kết nối SSE của user đã nhận"
+          }
+        }
+      },
+      "MarkReadResponse": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean"
+          },
+          "message": {
+            "type": "string"
+          },
+          "data": {
+            "$ref": "#/components/schemas/Notification"
+          }
+        }
+      },
+      "MarkAllReadResponse": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean"
+          },
+          "message": {
+            "type": "string"
+          },
+          "updatedCount": {
+            "type": "integer"
+          }
+        }
+      }
+    }
+  }
+}

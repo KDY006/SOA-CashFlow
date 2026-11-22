@@ -422,7 +422,7 @@ func (s *Server) handleRetrySync(w http.ResponseWriter, r *http.Request) {
 		var owner int64
 		err := s.db.QueryRowContext(r.Context(), `SELECT a.user_id FROM bank_transactions t
 			JOIN linked_accounts a ON a.id = t.account_id WHERE t.id = ?`, id).Scan(&owner)
-		if errors.Is(err, sql.ErrNoRows) || (err == nil && owner != uid) {
+		if errors.Is(err, sql.ErrNoRows) || (err == nil && forbiddenFor(r, owner)) {
 			fail(w, http.StatusNotFound, "NOT_FOUND", "không tìm thấy giao dịch")
 			return
 		}

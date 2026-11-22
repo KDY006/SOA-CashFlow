@@ -27,12 +27,29 @@ public static class AssetHandler
     {
         ValidateAsset(x);
         if (x.UserId != userId) throw new ArgumentException("user_id must match the requested user");
+        
+        // Kiểm tra xem bản ghi có tồn tại trước hay không
+        _ = Database.GetById("assets", id, userId);
+
         using var c = Database.GetConnection();
         using var q = new MySqlCommand("UPDATE assets SET asset_name=@name,asset_type=@type,purchase_price=@purchase,current_value=@current,salvage_value=@salvage,useful_life_years=@life,purchase_date=@date,currency=@currency,note=@note WHERE id=@id AND user_id=@user", c);
         AddAssetParameters(q, x);
         q.Parameters.AddWithValue("@id", id);
-        q.ExecuteNonQuery();
+        q.ExecuteNonQuery(); // Không check rowsAffected vì nếu dữ liệu không đổi, MySQL trả 0 nhưng bản ghi vẫn hợp lệ
+
         return Database.GetById("assets", id, userId);
+    }
+
+    public static object DeleteAsset(long id, long userId)
+    {
+        using var c = Database.GetConnection();
+        using var q = new MySqlCommand("DELETE FROM assets WHERE id=@id AND user_id=@user", c);
+        q.Parameters.AddWithValue("@id", id);
+        q.Parameters.AddWithValue("@user", userId);
+        var rowsAffected = q.ExecuteNonQuery();
+        
+        if (rowsAffected == 0) throw new KeyNotFoundException("Asset not found or unauthorized");
+        return new { message = "Asset deleted successfully", id };
     }
 
     public static object CalculateDepreciation(DepreciationInput x)
@@ -52,8 +69,12 @@ public static class AssetHandler
 
     private static void ValidateAsset(AssetInput x)
     {
-        if (x.UserId <= 0 || string.IsNullOrWhiteSpace(x.AssetName) || string.IsNullOrWhiteSpace(x.AssetType) || x.PurchasePrice < 0 || x.CurrentValue < 0 || x.SalvageValue < 0 || x.UsefulLifeYears < 0 || x.Currency?.Length > 10)
-            throw new ArgumentException("Invalid asset values");
+        if (x.UserId <= 0 
+            || string.IsNullOrWhiteSpace(x.AssetName) || x.AssetName.Length > 100 
+            || string.IsNullOrWhiteSpace(x.AssetType) || x.AssetType.Length > 50 
+            || x.PurchasePrice < 0 || x.CurrentValue < 0 || x.SalvageValue < 0 || x.UsefulLifeYears < 0 
+            || x.Currency?.Length > 10)
+            throw new ArgumentException("Invalid asset values or length exceeds limit");
     }
 
     private static void AddAssetParameters(MySqlCommand q, AssetInput x)

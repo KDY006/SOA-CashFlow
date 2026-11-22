@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"runtime/debug"
 	"strconv"
+	"strings"
 	"time"
 	"unicode/utf8"
 )
@@ -73,22 +74,33 @@ func authUserID(r *http.Request) int64 {
 }
 
 // ưu tiên header của gateway, để user không xem được dữ liệu người khác chỉ bằng cách sửa ?user_id.
-// không có header (gọi thẳng service khi test) thì mới lấy theo query
+// không có header (gọi thẳng service khi test) thì mới lấy theo query.
+// riêng ADMIN (X-User-Role do gateway gắn từ jwt) được phép xem user khác qua ?user_id=
 func userIDFrom(r *http.Request) int64 {
+	q, qErr := strconv.ParseInt(r.URL.Query().Get("user_id"), 10, 64)
+	hasQuery := qErr == nil && q > 0
 	if v := authUserID(r); v > 0 {
+		if isAdmin(r) && hasQuery {
+			return q
+		}
 		return v
 	}
-	if v, err := strconv.ParseInt(r.URL.Query().Get("user_id"), 10, 64); err == nil && v > 0 {
-		return v
+	if hasQuery {
+		return q
 	}
 	return 0
 }
 
+// role do gateway giải mã từ jwt rồi gắn vào header X-User-Role
+func isAdmin(r *http.Request) bool {
+	return strings.EqualFold(r.Header.Get("X-User-Role"), "ADMIN")
+}
+
 // có user đăng nhập mà không phải chủ dữ liệu thì coi như không tồn tại (trả 404 thay vì 403
-// để không lộ ra là id đó có tồn tại)
+// để không lộ ra là id đó có tồn tại). ADMIN được xem tất cả
 func forbiddenFor(r *http.Request, ownerID int64) bool {
 	uid := authUserID(r)
-	return uid > 0 && uid != ownerID
+	return uid > 0 && uid != ownerID && !isAdmin(r)
 }
 
 // cắt chuỗi theo số ký tự, không cắt ngang giữa ký tự tiếng việt

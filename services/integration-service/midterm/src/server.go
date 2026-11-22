@@ -43,6 +43,7 @@ func (s *Server) routes() http.Handler {
 	mux.HandleFunc("GET /api/integrations/accounts", s.handleListAccounts)
 	mux.HandleFunc("POST /api/integrations/accounts", s.handleCreateAccount)
 	mux.HandleFunc("GET /api/integrations/accounts/{id}", s.handleGetAccount)
+	mux.HandleFunc("DELETE /api/integrations/accounts/{id}", s.handleDeleteAccount)
 	mux.HandleFunc("GET /api/integrations/accounts/{id}/transactions", s.handleAccountTransactions)
 
 	mux.HandleFunc("POST /api/integrations/webhooks/banking", s.handleBankWebhook)
@@ -54,7 +55,7 @@ func (s *Server) routes() http.Handler {
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		// route "/" này hứng hết mọi request không khớp, kể cả trường hợp đúng đường dẫn nhưng sai method.
 		// thử lại với method khác, nếu khớp thì trả 405 cho đúng thay vì 404
-		for _, m := range []string{http.MethodGet, http.MethodPost} {
+		for _, m := range []string{http.MethodGet, http.MethodPost, http.MethodDelete} {
 			if m == r.Method {
 				continue
 			}

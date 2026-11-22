@@ -1,0 +1,115 @@
+@startuml
+' ================================================================
+' UML Use Case — Integration Service (Go)
+' Đối chiếu với routes trong server.go và handler trong webhook.go,
+' accounts.go, rates.go, simulate.go, sync.go, notifier.go
+' ================================================================
+left to right direction
+skinparam backgroundColor #FFFFFF
+skinparam shadowing false
+skinparam defaultFontName "Segoe UI"
+skinparam defaultFontSize 14
+skinparam ArrowColor #64748B
+skinparam ArrowThickness 1.2
+skinparam packageStyle rectangle
+skinparam nodesep 30
+skinparam ranksep 50
+skinparam usecase {
+  BackgroundColor #F1F5FF
+  BorderColor #5266AD
+  FontColor #172554
+}
+skinparam actor {
+  BorderColor #334155
+  FontColor #0F172A
+  BackgroundColor #FFFFFF
+}
+skinparam rectangle {
+  BorderColor #94A3B8
+  FontColor #0F172A
+  BackgroundColor #FFFFFF
+}
+skinparam note {
+  BackgroundColor #FFFBEB
+  BorderColor #D4B76A
+  FontColor #52451F
+}
+
+title Integration Service — Use Case Diagram\nGo net/http | Port 8085 | Giai doan Giua ky
+
+' === ACTORS ===
+actor "Nguoi dung\nCashFlow" as User
+actor "Nguoi kiem thu /\nvan hanh" as Tester
+actor "Ngan hang / Vi\n(gia lap webhook)" as Bank
+actor "Nguon ty gia\nVCB / TCB / BIDV\n(mock)" as RateProvider
+actor "Transaction Service\n(PHP :8082)" as TxService
+actor "Notification Service\n(Node.js :8086)" as NotiService
+
+' === BOUNDARY ===
+rectangle "INTEGRATION SERVICE  :8085" {
+
+  usecase "UC01\nLien ket tai khoan\nngan hang / vi" as UC01
+  usecase "UC02\nXem danh sach\ntai khoan lien ket" as UC02
+  usecase "UC03\nXem chi tiet\ntai khoan va so du" as UC03
+  usecase "UC04\nXem lich su\nbien dong so du" as UC04
+  usecase "UC05\nTra cuu ty gia\nngoai te" as UC05
+  usecase "UC06\nDong bo ty gia\nsong song (goroutine)" as UC06
+
+  usecase "UC07\nNhan webhook\nbien dong so du" as UC07
+  usecase "UC08\nDong bo giao dich\nsang Transaction Svc" as UC08
+  usecase "UC09\nYeu cau dong bo lai\ngiao dich FAILED" as UC09
+  usecase "UC10\nGui canh bao\nthong bao" as UC10
+
+  usecase "UC11\nGia lap kiem thu\nconcurrency\n(Safe / Unsafe)" as UC11 #F0FDFA
+  usecase "UC12\nKiem tra suc khoe\nservice (health)" as UC12 #F0FDFA
+
+  usecase "Kiem tra\nIdempotency" as UC_IDEM #FAF5FF
+  usecase "Xac thuc chu ky\nHMAC-SHA256" as UC_SIG #FAF5FF
+}
+
+' === ASSOCIATIONS ===
+User -- UC01
+User -- UC02
+User -- UC03
+User -- UC04
+User -- UC05
+User -- UC06
+User -- UC09
+
+Tester -- UC11
+Tester -- UC12
+
+Bank -- UC07
+RateProvider -- UC06
+
+UC08 -- TxService
+UC10 -- NotiService
+
+' === INCLUDE / EXTEND ===
+UC07 ..> UC_IDEM : <<include>>
+UC_SIG ..> UC07 : <<extend>>\n[WEBHOOK_SECRET duoc cau hinh]
+UC10 ..> UC07 : <<extend>>\n[giao dich bi tu choi\nhoac bien dong lon]
+UC10 ..> UC08 : <<extend>>\n[phan hoi co budget_alert]
+
+' === NOTES ===
+note bottom of UC08
+  UC07 ghi nhan giao dich -> dua ID vao hang doi.
+  UC09 dua giao dich FAILED vao lai hang doi.
+  Worker pool (sync.go) dong bo bat dong bo;
+  sweeper tu quet va thu lai moi 15 giay.
+end note
+
+note bottom of UC11
+  Tinh nang phuc vu demo / kiem thu.
+  Mode unsafe co the lam sai so du:
+  chi chay tren tai khoan demo rieng.
+end note
+
+legend bottom
+  |= Ky hieu |= Y nghia |
+  | Duong lien | Actor tuong tac voi chuc nang |
+  | <<include>> | Hanh vi bat buoc duoc dung lai |
+  | <<extend>> | Hanh vi bo sung khi thoa dieu kien |
+  | Pham vi | Khong gom dang nhap, chuyen tien ngan hang that |
+endlegend
+@enduml
