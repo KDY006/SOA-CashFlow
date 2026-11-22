@@ -159,9 +159,14 @@ SOA-CashFlow/
 
 Toàn bộ 6 services, API Gateway, 5 CSDL MySQL và 1 Redis sẽ được khởi chạy độc lập trong **13 containers**:
 
+#### Khởi động bản Giữa kỳ (Midterm - Native Code):
 ```powershell
-# 1. Khởi động và build toàn bộ 13 containers:
-docker-compose -f docker-compose.midterm.yml up -d --build
+docker compose -f docker-compose.midterm.yml up -d --build
+```
+
+#### Khởi động bản Cuối kỳ (Final - Nâng cấp Framework Express.js + Socket.io + Redis + OTP):
+```powershell
+docker compose -f docker-compose.final.yml up -d --build
 ```
 
 #### Kiểm tra trạng thái:

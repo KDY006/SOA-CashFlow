@@ -1,10 +1,19 @@
-# Docker Compose - Báo cáo Cuối kỳ (Triển khai các Services với Framework chuẩn)
+# =============================================================================
+# SOA-CashFlow: Docker Compose - Báo cáo Cuối kỳ (Final Phase)
+# Tối ưu: Tái sử dụng trực tiếp các Docker Image đã build từ Midterm
+# Chỉ build duy nhất Notification Service (nâng cấp Framework Express + Socket.io + OTP)
+# =============================================================================
 version: '3.8'
 
 services:
+  # ---------------------------------------------------------------------------
+  # API GATEWAY (Nhóm trưởng)
+  # Tái sử dụng image có sẵn từ midterm: soa-cashflow-gateway
+  # ---------------------------------------------------------------------------
   gateway:
+    image: soa-cashflow-gateway:latest
     build:
-      context: ./gateway
+      context: ./gateway/midterm
       dockerfile: Dockerfile
     container_name: cashflow-gateway-final
     restart: always
@@ -12,12 +21,15 @@ services:
       - "${GATEWAY_PORT:-8080}:8080"
     environment:
       - APP_ENV=production
+      - GATEWAY_PORT=8080
+      - GATEWAY_HOST=0.0.0.0
       - AUTH_SERVICE_URL=http://auth-service:8081
       - TRANSACTION_SERVICE_URL=http://transaction-service:8082
       - ASSET_SERVICE_URL=http://asset-service:8083
       - ANALYTICS_SERVICE_URL=http://analytics-service:8084
       - INTEGRATION_SERVICE_URL=http://integration-service:8085
       - NOTIFICATION_SERVICE_URL=http://notification-service:8086
+      - JWT_SECRET=${AUTH_JWT_SECRET:-cashflow-auth-midterm-development-secret-key}
     depends_on:
       - auth-service
       - transaction-service
@@ -28,68 +40,87 @@ services:
     networks:
       - final-network
 
-  # 1. Spring Boot (Java)
+  # ---------------------------------------------------------------------------
+  # 1. AUTH SERVICE (Java 17)
+  # Tái sử dụng image có sẵn từ midterm: soa-cashflow-auth-service
+  # ---------------------------------------------------------------------------
   auth-service:
+    image: soa-cashflow-auth-service:latest
     build:
-      context: ./services/auth-service
+      context: ./services/auth-service/midterm
       dockerfile: Dockerfile
     container_name: cashflow-auth-final
     restart: always
     ports:
       - "${AUTH_SERVICE_PORT:-8081}:8081"
     environment:
-      - SPRING_PROFILES_ACTIVE=prod
+      - PROFILE=native
       - DB_HOST=auth-db
+      - DB_PORT=3306
       - DB_NAME=auth_db
       - DB_USER=root
       - DB_PASSWORD=root_password
+      - JWT_SECRET=${AUTH_JWT_SECRET:-cashflow-auth-midterm-development-secret-key}
     depends_on:
       - auth-db
     networks:
       - final-network
 
-  # 2. Laravel (PHP)
+  # ---------------------------------------------------------------------------
+  # 2. TRANSACTION SERVICE (PHP 8.2)
+  # Tái sử dụng image có sẵn từ midterm: soa-cashflow-transaction-service
+  # ---------------------------------------------------------------------------
   transaction-service:
+    image: soa-cashflow-transaction-service:latest
     build:
-      context: ./services/transaction-service
+      context: ./services/transaction-service/midterm
       dockerfile: Dockerfile
     container_name: cashflow-transaction-final
     restart: always
     ports:
       - "${TRANSACTION_SERVICE_PORT:-8082}:8082"
     environment:
-      - APP_ENV=production
+      - PROFILE=native
       - DB_HOST=transaction-db
-      - DB_DATABASE=transaction_db
-      - DB_USERNAME=root
+      - DB_PORT=3306
+      - DB_NAME=transaction_db
+      - DB_USER=root
       - DB_PASSWORD=root_password
     depends_on:
       - transaction-db
     networks:
       - final-network
 
-  # 3. ASP.NET Core (C#)
+  # ---------------------------------------------------------------------------
+  # 3. ASSET SERVICE (C# .NET 10)
+  # Tái sử dụng image có sẵn từ midterm: soa-cashflow-asset-service
+  # ---------------------------------------------------------------------------
   asset-service:
+    image: soa-cashflow-asset-service:latest
     build:
-      context: ./services/asset-service
+      context: ./services/asset-service/midterm
       dockerfile: Dockerfile
     container_name: cashflow-asset-final
     restart: always
     ports:
       - "${ASSET_SERVICE_PORT:-8083}:8083"
     environment:
-      - ASPNETCORE_ENVIRONMENT=Production
+      - PROFILE=native
+      - PORT=8083
+      - LISTEN_HOST=*
       - DB_HOST=asset-db
-      - DB_NAME=asset_db
-      - DB_USER=root
-      - DB_PASSWORD=root_password
+      - DB_CONNECTION=Server=asset-db;Port=3306;Database=asset_db;Uid=root;Pwd=root_password;
     depends_on:
       - asset-db
     networks:
       - final-network
 
-  # 4. Analytics (reuses the native implementation available in this project)
+  # ---------------------------------------------------------------------------
+  # 4. ANALYTICS SERVICE (Python 3.11)
+  # Tái sử dụng image có sẵn từ midterm: soa-cashflow-analytics-service
+  # ---------------------------------------------------------------------------
   analytics-service:
+    image: soa-cashflow-analytics-service:latest
     build:
       context: ./services/analytics-service
       dockerfile: midterm/Dockerfile
@@ -112,29 +143,44 @@ services:
     networks:
       - final-network
 
+  # ---------------------------------------------------------------------------
+  # 5. INTEGRATION SERVICE (Go 1.22)
+  # Tái sử dụng image có sẵn từ midterm: soa-cashflow-integration-service
+  # ---------------------------------------------------------------------------
   integration-service:
+    image: soa-cashflow-integration-service:latest
     build:
-      context: ./services/integration-service
+      context: ./services/integration-service/midterm
       dockerfile: Dockerfile
     container_name: cashflow-integration-final
     restart: always
     ports:
       - "${INTEGRATION_SERVICE_PORT:-8085}:8085"
     environment:
-      - GIN_MODE=release
+      - PROFILE=native
+      - PORT=8085
       - DB_HOST=integration-db
+      - DB_PORT=3306
       - DB_NAME=integration_db
       - DB_USER=root
       - DB_PASSWORD=root_password
+      - TRANSACTION_SERVICE_URL=http://transaction-service:8082
+      - NOTIFICATION_SERVICE_URL=http://notification-service:8086
+      - SYNC_WORKERS=4
     depends_on:
       - integration-db
+      - transaction-service
+      - notification-service
     networks:
       - final-network
 
-  # 6. NestJS / Express (Node.js)
+  # ---------------------------------------------------------------------------
+  # 6. NOTIFICATION SERVICE (Nhóm trưởng - Nâng cấp Framework Express.js + Socket.io + OTP)
+  # ---------------------------------------------------------------------------
   notification-service:
+    image: cashflow-notification-final:latest
     build:
-      context: ./services/notification-service
+      context: ./services/notification-service/final
       dockerfile: Dockerfile
     container_name: cashflow-notification-final
     restart: always
@@ -142,18 +188,33 @@ services:
       - "${NOTIFICATION_SERVICE_PORT:-8086}:8086"
     environment:
       - NODE_ENV=production
+      - HOST=0.0.0.0
+      - NOTIFICATION_SERVICE_PORT=8086
+      - PORT=8086
       - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - REDIS_CHANNEL=cashflow:notifications
+      - REDIS_EVENTS_CHANNEL=cashflow:events
+      - OTP_TTL_SECONDS=300
     depends_on:
       - redis
     networks:
       - final-network
 
+  # ===========================================================================
+  # CƠ SỞ DỮ LIỆU & MESSAGE BROKERS (DATABASE-PER-SERVICE)
+  # Tái sử dụng trực tiếp các image chuẩn: mysql:8.0 và redis:7-alpine
+  # ===========================================================================
+
   auth-db:
     image: mysql:8.0
+    container_name: cashflow-auth-db-final
     restart: always
     environment:
       MYSQL_ROOT_PASSWORD: root_password
       MYSQL_DATABASE: auth_db
+    ports:
+      - "3307:3306"
     volumes:
       - ./services/auth-service/db/init-auth-db.sql:/docker-entrypoint-initdb.d/init.sql
       - auth_final_data:/var/lib/mysql
@@ -162,7 +223,9 @@ services:
 
   transaction-db:
     image: mysql:8.0
+    container_name: cashflow-transaction-db-final
     restart: always
+    command: --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci
     environment:
       MYSQL_ROOT_PASSWORD: root_password
       MYSQL_DATABASE: transaction_db
@@ -174,6 +237,7 @@ services:
 
   asset-db:
     image: mysql:8.0
+    container_name: cashflow-asset-db-final
     restart: always
     environment:
       MYSQL_ROOT_PASSWORD: root_password
@@ -186,7 +250,11 @@ services:
 
   integration-db:
     image: mysql:8.0
+    container_name: cashflow-integration-db-final
     restart: always
+    command: --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci
+    ports:
+      - "3310:3306"
     environment:
       MYSQL_ROOT_PASSWORD: root_password
       MYSQL_DATABASE: integration_db
@@ -198,7 +266,7 @@ services:
 
   analytics-db:
     image: mysql:8.0
-    container_name: cashflow-analytics-db
+    container_name: cashflow-analytics-db-final
     restart: always
     environment:
       MYSQL_ROOT_PASSWORD: ${ANALYTICS_DB_PASSWORD:-root_password}
@@ -211,6 +279,7 @@ services:
 
   redis:
     image: redis:7-alpine
+    container_name: cashflow-redis-final
     restart: always
     ports:
       - "6379:6379"
@@ -219,8 +288,12 @@ services:
     networks:
       - final-network
 
+# =============================================================================
+# MẠNG NỘI BỘ VÀ VOLUMES
+# =============================================================================
 networks:
   final-network:
+    name: cashflow-final-net
     driver: bridge
 
 volumes:
