@@ -23,7 +23,6 @@ Quản lý ngân sách thuộc Transaction Service (`/api/budgets` và `/api/bud
 ## Database và cấu hình
 
 Bảng `monthly_reports` được tạo bởi `db/init-analytics-db.sql`. Compose chạy service `analytics-db` với image `mysql:8.0` và volume riêng để dữ liệu tồn tại sau khi tạo lại container. Các biến nằm ở `.env` gốc:
-
 - `ANALYTICS_DB_HOST=analytics-db`
 - `ANALYTICS_DB_PORT=3306`
 - `ANALYTICS_DB_NAME=analytics_db`

@@ -1,27 +1,37 @@
 @startuml
 ' ================================================================
-' ERD — Integration Service (Go)
-' Database: integration_db (MySQL 8.0)
-' Doi chieu voi: db/init-integration-db.sql
+' Sơ đồ ERD - Integration Service (Go :8085)
+' Cơ sở dữ liệu: integration_db (MySQL 8.0)
 ' ================================================================
 skinparam backgroundColor #FFFFFF
 skinparam shadowing false
+skinparam roundCorner 4
 skinparam defaultFontName "Segoe UI"
 skinparam defaultFontSize 13
 skinparam linetype ortho
+skinparam nodesep 55
+skinparam ranksep 65
 
-!define TABLE(x) entity x << (T,#5266AD) >>
-!define PK(x) <b><color:#B91C1C>x</color></b>
-!define FK(x) <color:#1D4ED8>x</color>
+skinparam class {
+  BackgroundColor #FFFFFF
+  HeaderBackgroundColor #E2E8F0
+  BorderColor #334155
+  ArrowColor #1E293B
+  FontColor #0F172A
+}
+
+!define TABLE(name, desc) entity name as "<b>name</b>\n<size:11>desc</size>" << (T,#CBD5E1) >>
+!define PK(x) <b>[PK] x</b>
+!define FK(x) <b>[FK] x</b>
 !define UK(x) <u>x</u>
 !define IDX(x) <i>x</i>
 
-title ERD — Integration Service (integration_db)\nMySQL 8.0 | InnoDB | utf8mb4
+title Sơ đồ Thực thể Liên kết (ERD) — Integration Service (integration_db)\nHệ quản trị CSDL: MySQL 8.0 (InnoDB, utf8mb4)
 
-TABLE(linked_accounts) {
+TABLE(linked_accounts, "Tài khoản ngân hàng / ví liên kết") {
   PK(id) : BIGINT AUTO_INCREMENT
   --
-  IDX(user_id) : BIGINT NOT NULL
+  IDX(user_id) : BIGINT NOT NULL  [-> auth_db.users.id]
   UK(bank_code) : VARCHAR(20) NOT NULL
   UK(account_no) : VARCHAR(30) NOT NULL
   holder_name : VARCHAR(100) NOT NULL
@@ -30,41 +40,41 @@ TABLE(linked_accounts) {
   created_at : TIMESTAMP
   updated_at : TIMESTAMP
   --
-  UNIQUE (bank_code, account_no)
-  CHECK (balance >= 0)
+  UNIQUE uq_bank_account (bank_code, account_no)
   INDEX idx_linked_user (user_id)
+  CHECK (balance >= 0)
 }
 
-TABLE(bank_transactions) {
+TABLE(bank_transactions, "Lịch sử biến động số dư") {
   PK(id) : BIGINT AUTO_INCREMENT
   --
-  FK(account_id) : BIGINT NOT NULL
+  FK(account_id) : BIGINT NOT NULL  [-> linked_accounts.id]
   provider : VARCHAR(20) NOT NULL
   external_ref : VARCHAR(100) NOT NULL
   UK(idempotency_key) : VARCHAR(150) NOT NULL
   request_hash : CHAR(64) NOT NULL
-  direction : ENUM('CREDIT','DEBIT') NOT NULL
+  direction : ENUM('CREDIT', 'DEBIT') NOT NULL
   amount : DECIMAL(18,2) NOT NULL
   balance_after : DECIMAL(18,2) NOT NULL
   category : VARCHAR(100) DEFAULT ''
   description : VARCHAR(255) DEFAULT ''
   occurred_at : DATETIME NOT NULL
-  status : ENUM('RECEIVED','SYNCING',\n  'SYNCED','FAILED','REJECTED')
-  transaction_ref : BIGINT NULL
-  sync_attempts : INT DEFAULT 0
+  status : ENUM('RECEIVED','SYNCING','SYNCED','FAILED','REJECTED')
+  transaction_ref : BIGINT NULL  [-> transaction_db.transactions.id]
+  sync_attempts : INT NOT NULL DEFAULT 0
   last_error : VARCHAR(255) NULL
   created_at : TIMESTAMP
   updated_at : TIMESTAMP
   --
-  UNIQUE (idempotency_key)
-  UNIQUE (provider, external_ref)
-  FK account_id -> linked_accounts(id) CASCADE
+  UNIQUE uq_idempotency_key (idempotency_key)
+  UNIQUE uq_provider_ref (provider, external_ref)
+  FK fk_bank_tx_account (account_id) -> linked_accounts(id) ON DELETE CASCADE
+  INDEX idx_bank_tx_account (account_id, occurred_at)
+  INDEX idx_bank_tx_status (status, updated_at)
   CHECK (amount > 0)
-  INDEX (account_id, occurred_at)
-  INDEX (status, updated_at)
 }
 
-TABLE(exchange_rates) {
+TABLE(exchange_rates, "Bảng tỷ giá ngoại tệ") {
   PK(id) : INT AUTO_INCREMENT
   --
   UK(currency_code) : VARCHAR(10) NOT NULL
@@ -75,53 +85,30 @@ TABLE(exchange_rates) {
   CHECK (rate_to_vnd > 0)
 }
 
-TABLE(external_webhooks) {
+TABLE(external_webhooks, "Nhật ký thô sự kiện Webhook") {
   PK(id) : BIGINT AUTO_INCREMENT
   --
   IDX(provider_name) : VARCHAR(50) NOT NULL
   event_type : VARCHAR(50) NOT NULL
-  payload : JSON
+  payload : JSON NULL
   received_at : TIMESTAMP
   --
-  INDEX (provider_name, received_at)
+  INDEX idx_webhook_provider (provider_name, received_at)
 }
 
-' === RELATIONSHIPS ===
-linked_accounts ||--o{ bank_transactions : "1 tai khoan\nco nhieu bien dong"
+' Quan hệ khóa ngoại 1:N từ trên xuống dưới (Cột bên trái)
+linked_accounts ||--o{ bank_transactions : "  1 : N (ON DELETE CASCADE)"
 
-' === CROSS-SERVICE REFERENCES (logic only) ===
-note right of linked_accounts
-  <b>user_id</b> tham chieu logic
-  sang <b>auth-service → users.id</b>
-  (khong dat khoa ngoai cung
-  vi khac database)
-end note
-
-note right of bank_transactions
-  <b>transaction_ref</b> tham chieu logic
-  sang <b>transaction-service → transactions.id</b>
-  (co gia tri khi status = SYNCED)
-end note
-
-note bottom of exchange_rates
-  Bang doc lap, khong co khoa ngoai.
-  Du lieu dong bo dinh ky tu
-  VCB / TCB / BIDV (gia lap).
-end note
-
-note bottom of external_webhooks
-  Log tho moi lan ngan hang goi vao
-  (ke ca bi trung) de doi soat.
-  Bang doc lap, khong co khoa ngoai.
-end note
+' Sắp xếp 2 bảng độc lập thẳng hàng dọc ở cột bên phải
+linked_accounts -[hidden]right-> exchange_rates
+exchange_rates -[hidden]down-> external_webhooks
 
 legend bottom
-  |= Ky hieu |= Y nghia |
-  | <b><color:#B91C1C>PK</color></b> | Primary Key |
-  | <color:#1D4ED8>FK</color> | Foreign Key |
-  | <u>UK</u> | Unique Key |
-  | <i>IDX</i> | Indexed column |
-  | Duong lien | Quan he khoa ngoai that su trong DB |
-  | Note | Tham chieu logic sang service khac |
+  |= Ký hiệu / Trường |= Ý nghĩa trong CSDL integration_db |
+  | <b>[PK]</b> / <b>[FK]</b> / <u>UK</u> / <i>IDX</i> | Khóa chính (Primary Key) / Khóa ngoại (Foreign Key) / Khóa duy nhất (Unique) / Chỉ mục (Index) |
+  | <b>linked_accounts.user_id</b> | Tham chiếu logic sang <b>auth_db.users(id)</b> của Auth Service |
+  | <b>bank_transactions.transaction_ref</b> | Tham chiếu logic sang <b>transaction_db.transactions(id)</b> khi đồng bộ thành công (status = SYNCED) |
+  | <b>exchange_rates</b>, <b>external_webhooks</b> | Hai bảng độc lập: lưu tỷ giá ngoại tệ (VCB/TCB/BIDV) và lưu log JSON thô để đối soát Webhook |
 endlegend
+
 @enduml

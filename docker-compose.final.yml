@@ -122,12 +122,20 @@ services:
       - "${INTEGRATION_SERVICE_PORT:-8085}:8085"
     environment:
       - GIN_MODE=release
+      - PORT=8085
       - DB_HOST=integration-db
+      - DB_PORT=3306
       - DB_NAME=integration_db
       - DB_USER=root
       - DB_PASSWORD=root_password
+      - TRANSACTION_SERVICE_URL=http://transaction-service:8082
+      - NOTIFICATION_SERVICE_URL=http://notification-service:8086
+      - WEBHOOK_SECRET=${INTEGRATION_WEBHOOK_SECRET:-}
+      - SYNC_WORKERS=4
     depends_on:
       - integration-db
+      - transaction-service
+      - notification-service
     networks:
       - final-network
 

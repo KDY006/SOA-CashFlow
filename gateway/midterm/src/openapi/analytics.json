@@ -3,7 +3,7 @@
   "info": {
     "title": "Analytics Service (Python)",
     "version": "1.0.0-midterm",
-    "description": "Dịch vụ phân tích dòng tiền của SOA CashFlow. Viết bằng Python thuần (stdlib http.server + urllib + sqlite3), chạy nội bộ trên cổng 8084 và được truy cập qua API Gateway (:8080) với prefix /api/analytics.\n\nDữ liệu giao dịch được lấy từ Transaction Service (:8082); báo cáo tổng hợp hàng tháng được lưu trữ vào SQLite (`monthly_reports`) và có thể truy vấn lại qua `GET /api/analytics/reports`. Người dùng được xác định bởi header X-User-Id do Gateway inject từ JWT (ADMIN có thể truyền `user_id` để xem user khác)."
+    "description": "Dịch vụ phân tích dòng tiền của SOA CashFlow. Viết bằng Python thuần (stdlib http.server + urllib + PyMySQL kết nối MySQL 8.0), chạy nội bộ trên cổng 8084 và được truy cập qua API Gateway (:8080) với prefix /api/analytics.\n\nDữ liệu giao dịch được lấy từ Transaction Service (:8082); báo cáo tổng hợp hàng tháng được lưu trữ vào MySQL 8.0 (`analytics_db.monthly_reports`) và có thể truy vấn lại qua `GET /api/analytics/reports`. Người dùng được xác định bởi header X-User-Id do Gateway inject từ JWT (ADMIN có thể truyền `user_id` để xem user khác)."
   },
   "servers": [
     {
@@ -462,9 +462,9 @@
         "tags": [
           "Analytics"
         ],
-        "summary": "Tạo và lưu báo cáo tổng hợp tháng vào SQLite",
+        "summary": "Tạo và lưu báo cáo tổng hợp tháng vào MySQL 8 (analytics_db)",
         "operationId": "aggregateReport",
-        "description": "Nếu body có `transactions` thì dùng trực tiếp danh sách đó; nếu không, service lấy giao dịch từ Transaction Service theo `user_id`, `from_date`, `to_date`. `year`/`month` của báo cáo lấy theo `to_date` (hoặc ngày hiện tại) và tự động lưu/cập nhật vào bảng `monthly_reports` (SQLite).",
+        "description": "Nếu body có `transactions` thì dùng trực tiếp danh sách đó; nếu không, service lấy giao dịch từ Transaction Service theo `user_id`, `from_date`, `to_date`. `year`/`month` của báo cáo lấy theo `to_date` (hoặc ngày hiện tại) và tự động lưu/cập nhật vào bảng `monthly_reports` (MySQL 8.0 `analytics_db`).",
         "requestBody": {
           "required": false,
           "content": {
@@ -532,11 +532,11 @@
                       "properties": {
                         "stored": {
                           "type": "boolean",
-                          "description": "true khi đã lưu thành công vào SQLite"
+                          "description": "true khi đã lưu thành công vào MySQL (analytics_db)"
                         },
                         "database": {
                           "type": "string",
-                          "example": "sqlite"
+                          "example": "mysql"
                         }
                       }
                     }
@@ -569,7 +569,7 @@
                   },
                   "meta": {
                     "stored": true,
-                    "database": "sqlite"
+                    "database": "mysql"
                   }
                 }
               }
@@ -609,7 +609,7 @@
             "$ref": "#/components/responses/Unauthorized"
           },
           "502": {
-            "description": "Lỗi nguồn dữ liệu (Transaction Service hoặc MongoDB)",
+            "description": "Lỗi nguồn dữ liệu (Transaction Service hoặc MySQL analytics_db)",
             "content": {
               "application/json": {
                 "schema": {
@@ -617,7 +617,7 @@
                 },
                 "example": {
                   "error": "DATA_SOURCE_ERROR",
-                  "message": "Không lưu được báo cáo vào MongoDB: ServerSelectionTimeoutError"
+                  "message": "Không lưu được báo cáo vào MySQL: OperationalError"
                 }
               }
             }

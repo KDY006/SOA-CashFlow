@@ -1,115 +1,99 @@
 @startuml
 ' ================================================================
-' UML Use Case — Integration Service (Go)
-' Đối chiếu với routes trong server.go và handler trong webhook.go,
-' accounts.go, rates.go, simulate.go, sync.go, notifier.go
+' Sơ đồ Use Case - Integration Service (Go :8085)
+' Đối chiếu với: server.go, accounts.go, webhook.go, rates.go, sync.go, simulate.go
 ' ================================================================
 left to right direction
 skinparam backgroundColor #FFFFFF
 skinparam shadowing false
 skinparam defaultFontName "Segoe UI"
-skinparam defaultFontSize 14
-skinparam ArrowColor #64748B
-skinparam ArrowThickness 1.2
+skinparam defaultFontSize 13
 skinparam packageStyle rectangle
-skinparam nodesep 30
-skinparam ranksep 50
-skinparam usecase {
-  BackgroundColor #F1F5FF
-  BorderColor #5266AD
-  FontColor #172554
-}
+skinparam nodesep 16
+skinparam ranksep 55
+
+skinparam ArrowColor #334155
+skinparam ArrowThickness 1.1
+
 skinparam actor {
+  BackgroundColor #FFFFFF
+  BorderColor #1E293B
+  FontColor #0F172A
+}
+
+skinparam usecase {
+  BackgroundColor #F8FAFC
   BorderColor #334155
   FontColor #0F172A
-  BackgroundColor #FFFFFF
 }
+
 skinparam rectangle {
-  BorderColor #94A3B8
-  FontColor #0F172A
   BackgroundColor #FFFFFF
-}
-skinparam note {
-  BackgroundColor #FFFBEB
-  BorderColor #D4B76A
-  FontColor #52451F
+  BorderColor #334155
+  FontColor #0F172A
 }
 
-title Integration Service — Use Case Diagram\nGo net/http | Port 8085 | Giai doan Giua ky
+title Sơ đồ Use Case — Integration Service (Go net/http :8085)
 
-' === ACTORS ===
-actor "Nguoi dung\nCashFlow" as User
-actor "Nguoi kiem thu /\nvan hanh" as Tester
-actor "Ngan hang / Vi\n(gia lap webhook)" as Bank
-actor "Nguon ty gia\nVCB / TCB / BIDV\n(mock)" as RateProvider
-actor "Transaction Service\n(PHP :8082)" as TxService
-actor "Notification Service\n(Node.js :8086)" as NotiService
+' === TÁC NHÂN BÊN TRÁI ===
+actor "Người dùng\nCashFlow" as User
+actor "Ngân hàng / Ví điện tử\n(Đối tác Webhook)" as Bank
+actor "Người kiểm thử /\nVận hành" as Tester
 
-' === BOUNDARY ===
-rectangle "INTEGRATION SERVICE  :8085" {
+' === PHẠM VI HỆ THỐNG ===
+rectangle "INTEGRATION SERVICE (:8085)" {
 
-  usecase "UC01\nLien ket tai khoan\nngan hang / vi" as UC01
-  usecase "UC02\nXem danh sach\ntai khoan lien ket" as UC02
-  usecase "UC03\nXem chi tiet\ntai khoan va so du" as UC03
-  usecase "UC04\nXem lich su\nbien dong so du" as UC04
-  usecase "UC05\nTra cuu ty gia\nngoai te" as UC05
-  usecase "UC06\nDong bo ty gia\nsong song (goroutine)" as UC06
+  usecase "UC01: Liên kết tài khoản ngân hàng / ví" as UC01
+  usecase "UC02: Xem danh sách & chi tiết tài khoản" as UC02
+  usecase "UC03: Hủy liên kết tài khoản ngân hàng" as UC03
+  usecase "UC04: Xem lịch sử & chi tiết biến động số dư" as UC04
+  usecase "UC05: Xóa lịch sử biến động (Xóa lẻ / Xóa nhiều theo ID)" as UC05
+  usecase "UC06: Đồng bộ lại giao dịch lỗi (Retry FAILED)" as UC06
+  usecase "UC07: Tra cứu tỷ giá ngoại tệ" as UC07
+  usecase "UC08: Đồng bộ tỷ giá song song (Goroutine)" as UC08
+  usecase "UC09: Nhận Webhook biến động số dư" as UC09
+  usecase "UC10: Giả lập tải đồng thời (Safe / Unsafe mode)" as UC10
+  usecase "UC11: Kiểm tra trạng thái dịch vụ (Health Check)" as UC11
 
-  usecase "UC07\nNhan webhook\nbien dong so du" as UC07
-  usecase "UC08\nDong bo giao dich\nsang Transaction Svc" as UC08
-  usecase "UC09\nYeu cau dong bo lai\ngiao dich FAILED" as UC09
-  usecase "UC10\nGui canh bao\nthong bao" as UC10
-
-  usecase "UC11\nGia lap kiem thu\nconcurrency\n(Safe / Unsafe)" as UC11 #F0FDFA
-  usecase "UC12\nKiem tra suc khoe\nservice (health)" as UC12 #F0FDFA
-
-  usecase "Kiem tra\nIdempotency" as UC_IDEM #FAF5FF
-  usecase "Xac thuc chu ky\nHMAC-SHA256" as UC_SIG #FAF5FF
+  usecase "Kiểm tra Idempotency\n& Khóa số dư tài khoản" as UC_IDEM
+  usecase "Xác thực chữ ký\nHMAC-SHA256" as UC_SIG
+  usecase "Đồng bộ giao dịch nền\nsang Transaction Service" as UC_SYNC
+  usecase "Gửi cảnh báo biến động lớn /\nvượt ngân sách" as UC_ALERT
 }
 
-' === ASSOCIATIONS ===
+' === HỆ THỐNG LIÊN KẾT BÊN PHẢI ===
+actor "Nguồn tỷ giá\n(VCB / TCB / BIDV)" as RateSource
+actor "Transaction Service\n(PHP :8082)" as TxSvc
+actor "Notification Service\n(Node.js :8086)" as NotiSvc
+
+' === TÁC NHÂN CHÍNH (TRÁI -> GIỮA) ===
 User -- UC01
 User -- UC02
 User -- UC03
 User -- UC04
 User -- UC05
 User -- UC06
-User -- UC09
+User -- UC07
+User -- UC08
 
+Bank -- UC09
+
+Tester -- UC10
 Tester -- UC11
-Tester -- UC12
 
-Bank -- UC07
-RateProvider -- UC06
+' === INCLUDE / EXTEND (CỘT GIỮA 1 -> CỘT GIỮA 2) ===
+UC09 ..> UC_IDEM : <<include>>
+UC09 <.. UC_SIG : <<extend>>
+UC09 ..> UC_SYNC : <<include>>
+UC06 ..> UC_SYNC : <<include>>
+UC09 <.. UC_ALERT : <<extend>>
 
-UC08 -- TxService
-UC10 -- NotiService
+' === HỆ THỐNG BÊN PHẢI (CỘT GIỮA -> CỘT PHẢI) ===
+UC08 -- RateSource
+UC_SYNC -- TxSvc
+UC_ALERT -- NotiSvc
 
-' === INCLUDE / EXTEND ===
-UC07 ..> UC_IDEM : <<include>>
-UC_SIG ..> UC07 : <<extend>>\n[WEBHOOK_SECRET duoc cau hinh]
-UC10 ..> UC07 : <<extend>>\n[giao dich bi tu choi\nhoac bien dong lon]
-UC10 ..> UC08 : <<extend>>\n[phan hoi co budget_alert]
+' Căn thẳng cột hệ thống bên phải
+UC_IDEM -[hidden]-> RateSource
 
-' === NOTES ===
-note bottom of UC08
-  UC07 ghi nhan giao dich -> dua ID vao hang doi.
-  UC09 dua giao dich FAILED vao lai hang doi.
-  Worker pool (sync.go) dong bo bat dong bo;
-  sweeper tu quet va thu lai moi 15 giay.
-end note
-
-note bottom of UC11
-  Tinh nang phuc vu demo / kiem thu.
-  Mode unsafe co the lam sai so du:
-  chi chay tren tai khoan demo rieng.
-end note
-
-legend bottom
-  |= Ky hieu |= Y nghia |
-  | Duong lien | Actor tuong tac voi chuc nang |
-  | <<include>> | Hanh vi bat buoc duoc dung lai |
-  | <<extend>> | Hanh vi bo sung khi thoa dieu kien |
-  | Pham vi | Khong gom dang nhap, chuyen tien ngan hang that |
-endlegend
 @enduml

@@ -255,6 +255,12 @@ def _save_report(user_id: int, report: dict[str, Any]) -> None:
                  json.dumps(report, ensure_ascii=False),
                  datetime.fromisoformat(report["generated_at"].replace("Z", "+00:00")).replace(tzinfo=None)),
             )
+            row = connection.execute(
+                "SELECT report_id FROM monthly_reports WHERE user_id = %s AND year = %s AND month = %s",
+                (user_id, report["year"], report["month"]),
+            ).fetchone()
+            if row and "report_id" in row:
+                report["report_id"] = int(row["report_id"])
     except pymysql.MySQLError as exc:
         raise RuntimeError(f"Không lưu được báo cáo vào MySQL: {exc}")
 
@@ -271,12 +277,17 @@ def _load_reports(user_id: int, year: int | None, month: int | None) -> list[dic
     try:
         with _database() as connection:
             records = connection.execute(
-                "SELECT report_json FROM monthly_reports WHERE " + " AND ".join(clauses)
+                "SELECT report_id, report_json FROM monthly_reports WHERE " + " AND ".join(clauses)
                 + " ORDER BY year DESC, month DESC LIMIT 100",
                 params,
             ).fetchall()
-        return [record["report_json"] if isinstance(record["report_json"], dict)
-                else json.loads(record["report_json"]) for record in records]
+        out = []
+        for record in records:
+            item = record["report_json"] if isinstance(record["report_json"], dict) else json.loads(record["report_json"])
+            if isinstance(item, dict) and "report_id" in record:
+                item["report_id"] = int(record["report_id"])
+            out.append(item)
+        return out
     except (pymysql.MySQLError, json.JSONDecodeError) as exc:
         raise RuntimeError(f"Không đọc được báo cáo từ MySQL: {exc}")
 
@@ -394,4 +405,3 @@ if __name__ == "__main__":
     _init_database()
     print(f"Analytics Service (Native Python) listening on {HOST}:{PORT}")
     ThreadingHTTPServer((HOST, PORT), AnalyticsHandler).serve_forever()
-

@@ -11,6 +11,8 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"net/url"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -22,8 +24,9 @@ var (
 
 const maxAmount money = 1_000_000_000_000 * 100 // 1000 tỷ
 
-// payload ngân hàng gửi sang
+// payload ngân hàng gửi sang (hỗ trợ thêm account_id và tự sinh external_ref khi test nhanh)
 type webhookRequest struct {
+	AccountID   int64   `json:"account_id"`
 	Provider    string  `json:"provider"`
 	ExternalRef string  `json:"external_ref"`
 	BankCode    string  `json:"bank_code"`
@@ -308,17 +311,108 @@ func (s *Server) handleBankWebhook(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req webhookRequest
-	if err := json.Unmarshal(raw, &req); err != nil {
-		fail(w, http.StatusBadRequest, "BAD_REQUEST", "json không hợp lệ")
-		return
+	ct := strings.ToLower(r.Header.Get("Content-Type"))
+	trimmedRaw := strings.TrimSpace(string(raw))
+	if strings.HasPrefix(ct, "application/x-www-form-urlencoded") || (len(trimmedRaw) > 0 && !strings.HasPrefix(trimmedRaw, "{")) {
+		vals, perr := url.ParseQuery(trimmedRaw)
+		if perr != nil {
+			fail(w, http.StatusBadRequest, "BAD_REQUEST", "dữ liệu form không hợp lệ")
+			return
+		}
+		if v, err := strconv.ParseInt(strings.TrimSpace(vals.Get("account_id")), 10, 64); err == nil {
+			req.AccountID = v
+		}
+		req.Provider = vals.Get("provider")
+		req.ExternalRef = vals.Get("external_ref")
+		req.BankCode = vals.Get("bank_code")
+		req.AccountNo = vals.Get("account_no")
+		req.Direction = vals.Get("direction")
+		if v, err := strconv.ParseFloat(strings.TrimSpace(vals.Get("amount")), 64); err == nil {
+			req.Amount = v
+		}
+		req.Category = vals.Get("category")
+		req.Description = vals.Get("description")
+		req.OccurredAt = vals.Get("occurred_at")
+	} else if len(trimmedRaw) > 0 {
+		if err := json.Unmarshal(raw, &req); err != nil {
+			fail(w, http.StatusBadRequest, "BAD_REQUEST", "json không hợp lệ")
+			return
+		}
 	}
-	in, err := req.normalize(r.Header.Get("Idempotency-Key"))
+
+	// Hỗ trợ truyền nhanh qua query params nếu body để trống một số trường
+	q := r.URL.Query()
+	if req.AccountID <= 0 {
+		if v, err := strconv.ParseInt(strings.TrimSpace(q.Get("account_id")), 10, 64); err == nil && v > 0 {
+			req.AccountID = v
+		}
+	}
+	if strings.TrimSpace(req.Direction) == "" && q.Get("direction") != "" {
+		req.Direction = q.Get("direction")
+	}
+	if req.Amount == 0 && q.Get("amount") != "" {
+		if v, err := strconv.ParseFloat(strings.TrimSpace(q.Get("amount")), 64); err == nil {
+			req.Amount = v
+		}
+	}
+
+	// Tự động tra cứu bank_code + account_no từ account_id (hoặc lấy tài khoản mặc định #1 nếu bỏ trống cả hai khi test)
+	if strings.TrimSpace(req.AccountNo) == "" && s.db != nil {
+		lookupID := req.AccountID
+		if lookupID > 0 {
+			var bCode, accNo string
+			if err := s.db.QueryRowContext(r.Context(), "SELECT bank_code, account_no FROM linked_accounts WHERE id = ?", lookupID).Scan(&bCode, &accNo); err == nil {
+				if strings.TrimSpace(req.BankCode) == "" {
+					req.BankCode = bCode
+				}
+				req.AccountNo = accNo
+			} else if errors.Is(err, sql.ErrNoRows) {
+				fail(w, http.StatusNotFound, "ACCOUNT_NOT_FOUND", fmt.Sprintf("không tìm thấy tài khoản liên kết có account_id = %d", lookupID))
+				return
+			}
+		} else {
+			uid := authUserID(r)
+			var bCode, accNo string
+			var qErr error
+			if uid > 0 {
+				qErr = s.db.QueryRowContext(r.Context(), "SELECT bank_code, account_no FROM linked_accounts WHERE user_id = ? ORDER BY id LIMIT 1", uid).Scan(&bCode, &accNo)
+			} else {
+				qErr = s.db.QueryRowContext(r.Context(), "SELECT bank_code, account_no FROM linked_accounts ORDER BY id LIMIT 1").Scan(&bCode, &accNo)
+			}
+			if qErr == nil {
+				if strings.TrimSpace(req.BankCode) == "" {
+					req.BankCode = bCode
+				}
+				req.AccountNo = accNo
+			}
+		}
+	}
+
+	if strings.TrimSpace(req.Provider) == "" && strings.TrimSpace(req.BankCode) != "" {
+		req.Provider = req.BankCode
+	}
+	extRef := strings.TrimSpace(req.ExternalRef)
+	autoRef := extRef == "" || strings.EqualFold(extRef, "AUTO")
+	if autoRef {
+		req.ExternalRef = fmt.Sprintf("FT%d", time.Now().UnixNano()/1e5)
+	}
+
+	idemHeader := strings.TrimSpace(r.Header.Get("Idempotency-Key"))
+	if strings.EqualFold(idemHeader, "AUTO") {
+		idemHeader = ""
+	}
+
+	in, err := req.normalize(idemHeader)
 	if err != nil {
 		fail(w, http.StatusUnprocessableEntity, "VALIDATION_ERROR", err.Error())
 		return
 	}
 
-	s.logWebhook(in.Provider, raw)
+	logPayload := raw
+	if !json.Valid(logPayload) {
+		logPayload, _ = json.Marshal(req)
+	}
+	s.logWebhook(in.Provider, logPayload)
 
 	res, err := s.processWebhook(r.Context(), in)
 	switch {
@@ -408,6 +502,160 @@ func (s *Server) handleGetBankTx(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	ok(w, http.StatusOK, "lấy chi tiết giao dịch thành công", t)
+}
+
+// DELETE /api/integrations/bank-transactions/{id}
+func (s *Server) handleDeleteBankTx(w http.ResponseWriter, r *http.Request) {
+	id, valid := pathID(r)
+	if !valid {
+		fail(w, http.StatusBadRequest, "INVALID_ID", "id không hợp lệ")
+		return
+	}
+	t, err := getBankTx(r.Context(), s.db, id)
+	if err == nil {
+		var owner int64
+		owner, err = s.accountOwner(r.Context(), t.AccountID)
+		if err == nil && forbiddenFor(r, owner) {
+			err = sql.ErrNoRows
+		}
+	}
+	if errors.Is(err, sql.ErrNoRows) {
+		fail(w, http.StatusNotFound, "NOT_FOUND", "không tìm thấy giao dịch biến động")
+		return
+	}
+	if err != nil {
+		s.internalError(w, err)
+		return
+	}
+
+	res, err := s.db.ExecContext(r.Context(), "DELETE FROM bank_transactions WHERE id = ?", id)
+	if err != nil {
+		s.internalError(w, err)
+		return
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		fail(w, http.StatusNotFound, "NOT_FOUND", "không tìm thấy giao dịch biến động")
+		return
+	}
+	ok(w, http.StatusOK, "xoá lịch sử biến động thành công", t)
+}
+
+type batchDeleteBankTxRequest struct {
+	IDs       []int64 `json:"ids"`
+	AccountID int64   `json:"account_id"`
+	Status    string  `json:"status"`
+}
+
+// DELETE /api/integrations/bank-transactions?ids=1,2,3 (hoặc JSON body {"ids":[1,2,3], "account_id":1, "status":"RECEIVED"})
+func (s *Server) handleBatchDeleteBankTx(w http.ResponseWriter, r *http.Request) {
+	var req batchDeleteBankTxRequest
+	if raw, err := readBody(r); err == nil && len(strings.TrimSpace(string(raw))) > 0 {
+		if err := json.Unmarshal(raw, &req); err != nil {
+			fail(w, http.StatusBadRequest, "BAD_REQUEST", "json body không hợp lệ")
+			return
+		}
+	}
+
+	seen := map[int64]bool{}
+	var ids []int64
+	addID := func(v int64) {
+		if v > 0 && !seen[v] && len(ids) < 500 {
+			seen[v] = true
+			ids = append(ids, v)
+		}
+	}
+	for _, id := range req.IDs {
+		addID(id)
+	}
+	for _, rawVal := range r.URL.Query()["ids"] {
+		for _, part := range strings.Split(rawVal, ",") {
+			part = strings.TrimSpace(part)
+			if part == "" {
+				continue
+			}
+			v, err := strconv.ParseInt(part, 10, 64)
+			if err != nil || v <= 0 {
+				fail(w, http.StatusBadRequest, "INVALID_ID", fmt.Sprintf("id '%s' không hợp lệ", part))
+				return
+			}
+			addID(v)
+		}
+	}
+
+	accountID := req.AccountID
+	if qAcc := strings.TrimSpace(r.URL.Query().Get("account_id")); qAcc != "" {
+		v, err := strconv.ParseInt(qAcc, 10, 64)
+		if err != nil || v <= 0 {
+			fail(w, http.StatusBadRequest, "INVALID_ACCOUNT_ID", "account_id không hợp lệ")
+			return
+		}
+		accountID = v
+	}
+
+	status := strings.ToUpper(strings.TrimSpace(req.Status))
+	if qSt := strings.ToUpper(strings.TrimSpace(r.URL.Query().Get("status"))); qSt != "" {
+		status = qSt
+	}
+	if status != "" && !validTxStatus[status] {
+		fail(w, http.StatusBadRequest, "INVALID_STATUS", "status chỉ nhận RECEIVED, SYNCING, SYNCED, FAILED hoặc REJECTED")
+		return
+	}
+
+	if len(ids) == 0 && accountID <= 0 {
+		fail(w, http.StatusBadRequest, "MISSING_FILTER", "vui lòng truyền danh sách ids (vd: ?ids=1,2,3) hoặc account_id cần xoá")
+		return
+	}
+
+	if accountID > 0 {
+		owner, err := s.accountOwner(r.Context(), accountID)
+		if errors.Is(err, sql.ErrNoRows) || (err == nil && forbiddenFor(r, owner)) {
+			fail(w, http.StatusNotFound, "NOT_FOUND", "không tìm thấy tài khoản liên kết")
+			return
+		}
+		if err != nil {
+			s.internalError(w, err)
+			return
+		}
+	}
+
+	var conds []string
+	var args []any
+
+	uid := authUserID(r)
+	if uid > 0 && !isAdmin(r) {
+		conds = append(conds, "a.user_id = ?")
+		args = append(args, uid)
+	}
+	if accountID > 0 {
+		conds = append(conds, "t.account_id = ?")
+		args = append(args, accountID)
+	}
+	if status != "" {
+		conds = append(conds, "t.status = ?")
+		args = append(args, status)
+	}
+	if len(ids) > 0 {
+		placeholders := make([]string, len(ids))
+		for i, id := range ids {
+			placeholders[i] = "?"
+			args = append(args, id)
+		}
+		conds = append(conds, "t.id IN ("+strings.Join(placeholders, ",")+")")
+	}
+
+	query := "DELETE t FROM bank_transactions t JOIN linked_accounts a ON a.id = t.account_id WHERE " + strings.Join(conds, " AND ")
+	res, err := s.db.ExecContext(r.Context(), query, args...)
+	if err != nil {
+		s.internalError(w, err)
+		return
+	}
+	deleted, _ := res.RowsAffected()
+	ok(w, http.StatusOK, fmt.Sprintf("đã xoá %d bản ghi lịch sử biến động số dư", deleted), map[string]any{
+		"deleted_count": deleted,
+		"ids":           ids,
+		"account_id":    accountID,
+		"status":        status,
+	})
 }
 
 // POST /api/integrations/bank-transactions/{id}/retry

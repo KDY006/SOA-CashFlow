@@ -97,9 +97,12 @@ Gọi thẳng vào cổng 8085 (không có header) thì mới dùng `?user_id=` 
 | GET | `/api/integrations/accounts?user_id=1` | danh sách tài khoản liên kết |
 | POST | `/api/integrations/accounts` | liên kết tài khoản mới |
 | GET | `/api/integrations/accounts/{id}` | chi tiết tài khoản + số dư |
+| DELETE | `/api/integrations/accounts/{id}` | hủy liên kết tài khoản ngân hàng (xóa kèm lịch sử biến động) |
 | GET | `/api/integrations/accounts/{id}/transactions?status=&limit=` | lịch sử biến động |
 | POST | `/api/integrations/webhooks/banking` | **ngân hàng gọi vào khi có biến động** |
 | GET | `/api/integrations/bank-transactions/{id}` | chi tiết 1 biến động |
+| DELETE | `/api/integrations/bank-transactions/{id}` | xóa 1 bản ghi lịch sử biến động số dư theo ID |
+| DELETE | `/api/integrations/bank-transactions?ids=1,2,3` | xóa hàng loạt lịch sử biến động theo danh sách ID / tài khoản / trạng thái |
 | POST | `/api/integrations/bank-transactions/{id}/retry` | đẩy lại giao dịch FAILED sang transaction-service |
 | POST | `/api/integrations/simulate` | giả lập ngân hàng bắn đồng thời, trả về kết quả đối chiếu |
 

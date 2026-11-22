@@ -64,6 +64,7 @@ module.exports = {
     { method: "POST", path: "/api/auth/login" },
     { method: "POST", path: "/api/auth/refresh" },
     { method: "GET", path: "/api/integrations/rates" },
+    { method: "POST", path: "/api/integrations/webhooks/banking" },
     { method: "GET", path: "/health" },
     { method: "GET", path: "/" },
   ],
