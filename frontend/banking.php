@@ -64,6 +64,30 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             flash('danger', 'Không thể xoá tài khoản ngân hàng: ' . $r['error']);
         }
         redirect('banking.php');
+    } elseif ($action === 'delete_bank_tx') {
+        $acc = (int) ($_POST['acc'] ?? 0);
+        $stTab = trim((string) ($_POST['tab_status'] ?? ''));
+        $mode = trim((string) ($_POST['del_mode'] ?? 'ids'));
+        $rawIds = preg_replace('/[^0-9,]/', '', (string) ($_POST['ids'] ?? ''));
+        $rawIds = trim(preg_replace('/,+/', ',', $rawIds), ',');
+
+        if ($mode === 'tab' && $acc > 0) {
+            $q = '/api/integrations/bank-transactions?account_id=' . $acc . ($stTab !== '' ? '&status=' . urlencode($stTab) : '');
+            $r = api('DELETE', $q);
+        } elseif ($rawIds !== '') {
+            $r = api('DELETE', '/api/integrations/bank-transactions?ids=' . urlencode($rawIds));
+        } else {
+            flash('warning', 'Vui lòng chọn ít nhất 1 dòng hoặc nhập ID biến động cần xoá.');
+            redirect('banking.php?acc=' . $acc . ($stTab !== '' ? '&status=' . urlencode($stTab) : ''));
+        }
+
+        if ($r['ok']) {
+            $cnt = (int) ($r['body']['data']['deleted_count'] ?? 0);
+            flash('success', $cnt > 0 ? "Đã xoá $cnt bản ghi lịch sử biến động số dư." : 'Không có bản ghi nào khớp với ID đã chọn.');
+        } else {
+            flash('danger', 'Không thể xoá lịch sử biến động: ' . $r['error']);
+        }
+        redirect('banking.php?acc=' . $acc . ($stTab !== '' ? '&status=' . urlencode($stTab) : ''));
     }
     redirect('banking.php');
 }
@@ -301,17 +325,22 @@ $knownBankCodes = ['vcb', 'tcb', 'mb', 'bidv', 'acb', 'vpb', 'tpb', 'vtb', 'agr'
 <section class="grid grid-main mb">
     <!-- Biến động -->
     <div class="panel">
-        <div class="panel-head" style="flex-wrap:wrap">
+        <div class="panel-head" style="flex-wrap:wrap;gap:.65rem">
             <div class="panel-title">
                 <span class="p-icon green"><i class="fa-solid fa-money-bill-transfer"></i></span>
-                <div><h2>Biến động số dư</h2><p><?= $sel ? e(bankName($sel['bank_code'])) . ' · ' . e(maskAccount($sel['account_no'])) : 'Chọn một tài khoản' ?></p></div>
+                <div><h2>Biến động số dư</h2><p><?= $sel ? e(bankName($sel['bank_code'])) . ' · ' . e(maskAccount($sel['account_no'])) . ' · GET/DELETE /api/integrations/bank-transactions' : 'Chọn một tài khoản' ?></p></div>
             </div>
             <?php if ($sel): ?>
-                <div class="tabs">
-                    <a href="banking.php?acc=<?= (int) $sel['id'] ?>" class="<?= empty($statusF) ? 'active' : '' ?>">Tất cả</a>
-                    <?php foreach (['SYNCED', 'RECEIVED', 'FAILED', 'REJECTED'] as $s): ?>
-                        <a href="banking.php?acc=<?= (int) $sel['id'] ?>&status=<?= $s ?>" class="<?= ($statusF ?? '') === $s ? 'active' : '' ?>"><?= TX_STATUS[$s][0] ?></a>
-                    <?php endforeach; ?>
+                <div style="display:flex;align-items:center;gap:.55rem;flex-wrap:wrap;margin-left:auto">
+                    <div class="tabs">
+                        <a href="banking.php?acc=<?= (int) $sel['id'] ?>" class="<?= empty($statusF) ? 'active' : '' ?>">Tất cả</a>
+                        <?php foreach (['SYNCED', 'RECEIVED', 'FAILED', 'REJECTED'] as $s): ?>
+                            <a href="banking.php?acc=<?= (int) $sel['id'] ?>&status=<?= $s ?>" class="<?= ($statusF ?? '') === $s ? 'active' : '' ?>"><?= TX_STATUS[$s][0] ?></a>
+                        <?php endforeach; ?>
+                    </div>
+                    <button type="button" class="btn btn-ghost btn-sm" id="btnOpenBtxDelModal" style="color:#ef4444;border-color:rgba(239,68,68,.28);background:rgba(239,68,68,.06)" title="Chọn nhiều dòng hoặc nhập danh sách ID để xoá 1 lượt">
+                        <i class="fa-solid fa-trash-can"></i> <span id="btnDelBtxLabel">Xoá lịch sử</span>
+                    </button>
                 </div>
             <?php endif; ?>
         </div>
@@ -322,25 +351,46 @@ $knownBankCodes = ['vcb', 'tcb', 'mb', 'bidv', 'acb', 'vpb', 'tpb', 'vtb', 'agr'
         <?php else: ?>
             <div class="table-wrap">
                 <table class="table">
-                    <thead><tr><th>Nội dung</th><th>Trạng thái</th><th class="t-right">Số tiền</th><th class="t-right">Số dư sau</th><th></th></tr></thead>
+                    <thead>
+                        <tr>
+                            <th style="width:36px;text-align:center">
+                                <input type="checkbox" id="btxCheckAll" title="Chọn / bỏ chọn tất cả" style="width:16px;height:16px;cursor:pointer;accent-color:#2563eb">
+                            </th>
+                            <th>Nội dung</th>
+                            <th>Trạng thái</th>
+                            <th class="t-right">Số tiền</th>
+                            <th class="t-right">Số dư sau</th>
+                            <th class="t-right">Thao tác</th>
+                        </tr>
+                    </thead>
                     <tbody>
                     <?php foreach ($bankTx as $t):
+                        $tid = (int) $t['id'];
                         $in = $t['direction'] === 'CREDIT';
                         [$sl, $sc, $si] = TX_STATUS[$t['status']] ?? [$t['status'], 'blue', 'fa-circle']; ?>
-                        <tr id="btx-<?= (int) $t['id'] ?>">
+                        <tr id="btx-<?= $tid ?>">
+                            <td style="text-align:center">
+                                <input type="checkbox" class="btx-row-check" value="<?= $tid ?>" title="Chọn biến động ID #<?= $tid ?>" style="width:16px;height:16px;cursor:pointer;accent-color:#2563eb">
+                            </td>
                             <td><div class="cell-flex">
                                 <span class="cat-icon" style="--c:<?= $in ? '#10b981' : '#ef4444' ?>"><i class="fa-solid <?= $in ? 'fa-arrow-down' : 'fa-arrow-up' ?>"></i></span>
-                                <div><strong class="t-ink"><?= e($t['description'] ?: ($t['category'] ?: ($in ? 'Tiền vào' : 'Tiền ra'))) ?></strong>
-                                    <div class="small t-muted"><?= dateVN($t['occurred_at'], true) ?> · <?= e($t['external_ref']) ?><?= $t['transaction_ref'] ? ' · TX#' . (int) $t['transaction_ref'] : '' ?></div></div>
+                                <div>
+                                    <strong class="t-ink"><?= e($t['description'] ?: ($t['category'] ?: ($in ? 'Tiền vào' : 'Tiền ra'))) ?></strong>
+                                    <span class="pill" style="margin-left:.35rem;font-size:.68rem;padding:.08rem .42rem;background:rgba(15,23,42,.06);color:#475569">ID #<?= $tid ?></span>
+                                    <div class="small t-muted"><?= dateVN($t['occurred_at'], true) ?> · <?= e($t['external_ref']) ?><?= $t['transaction_ref'] ? ' · TX#' . (int) $t['transaction_ref'] : '' ?></div>
+                                </div>
                             </div></td>
                             <td><span class="pill <?= $sc ?>" title="<?= e($t['last_error'] ?? '') ?>"><i class="fa-solid <?= $si ?>"></i> <?= $sl ?></span>
                                 <?php if (!empty($t['last_error']) && $t['status'] === 'FAILED'): ?><div class="small t-red" style="max-width:220px"><?= e($t['last_error']) ?></div><?php endif; ?></td>
                             <td class="t-right"><span class="money <?= $in ? 't-green' : 't-red' ?>"><?= money(($in ? 1 : -1) * abs((float) $t['amount']), true) ?></span></td>
                             <td class="t-right money small"><?= money($t['balance_after']) ?></td>
-                            <td class="t-right">
+                            <td class="t-right" style="white-space:nowrap">
                                 <?php if ($t['status'] === 'FAILED'): ?>
-                                    <button class="btn-icon edit" title="Thử đồng bộ lại" data-retry="<?= (int) $t['id'] ?>"><i class="fa-solid fa-rotate-right"></i></button>
+                                    <button class="btn-icon edit" title="Thử đồng bộ lại #<?= $tid ?>" data-retry="<?= $tid ?>"><i class="fa-solid fa-rotate-right"></i></button>
                                 <?php endif; ?>
+                                <button type="button" class="btn-icon del" style="color:#ef4444" title="Xoá biến động #<?= $tid ?>" data-del-btx-one="<?= $tid ?>">
+                                    <i class="fa-solid fa-trash-can"></i>
+                                </button>
                             </td>
                         </tr>
                     <?php endforeach; ?>
@@ -549,8 +599,111 @@ $knownBankCodes = ['vcb', 'tcb', 'mb', 'bidv', 'acb', 'vpb', 'tpb', 'vtb', 'agr'
     </div>
 </div>
 
+<!-- Modal xoá lịch sử biến động số dư (1 hoặc nhiều ID 1 lượt) -->
+<div class="modal" id="deleteBankTxModal">
+    <div class="modal-dialog" style="max-width:500px">
+        <div class="modal-head">
+            <span class="p-icon red"><i class="fa-solid fa-trash-can"></i></span>
+            <div style="flex:1">
+                <h3>Xoá lịch sử biến động số dư</h3>
+                <p id="delBtxApiPreview" style="font-family:'JetBrains Mono',monospace;font-size:.76rem">DELETE /api/integrations/bank-transactions?ids=...</p>
+            </div>
+            <button type="button" class="modal-close" data-close><i class="fa-solid fa-xmark"></i></button>
+        </div>
+        <form method="post" id="deleteBankTxForm">
+            <?= csrfField() ?>
+            <input type="hidden" name="action" value="delete_bank_tx">
+            <input type="hidden" name="acc" value="<?= (int) ($sel['id'] ?? 0) ?>">
+            <input type="hidden" name="tab_status" value="<?= e($statusF ?? '') ?>">
+            <input type="hidden" name="del_mode" id="delBtxMode" value="ids">
+            <div class="modal-body">
+                <div class="field">
+                    <label for="delBtxIdsInput">Danh sách ID biến động cần xoá (cách nhau bởi dấu phẩy)</label>
+                    <input class="input" type="text" id="delBtxIdsInput" name="ids" placeholder="Ví dụ: 12, 15, 18" style="font-family:'JetBrains Mono',monospace;font-weight:700">
+                    <small class="t-muted" style="display:block;margin-top:.35rem">
+                        Bạn có thể tích chọn nhiều dòng trên bảng hoặc gõ trực tiếp các số <b>ID #</b> vào ô trên để xoá 1 lượt qua API.
+                    </small>
+                </div>
+                <?php if ($sel && $bankTx): ?>
+                    <div style="margin-top:.9rem;padding:.75rem .9rem;border-radius:12px;background:rgba(239,68,68,.06);border:1px dashed rgba(239,68,68,.28);display:flex;align-items:center;justify-content:space-between;gap:.75rem;flex-wrap:wrap">
+                        <span style="font-size:.82rem;color:#475569">
+                            Hoặc xoá toàn bộ <strong><?= count($bankTx) ?> dòng</strong> đang hiển thị ở tab <strong><?= !empty($statusF) ? TX_STATUS[$statusF][0] : 'Tất cả' ?></strong>:
+                        </span>
+                        <button type="button" class="btn btn-ghost btn-sm" id="btnClearCurrentTabBtx" style="color:#dc2626;border-color:rgba(220,38,38,.3);background:#fff">
+                            <i class="fa-solid fa-broom"></i> Xoá hết tab này (<?= count($bankTx) ?>)
+                        </button>
+                    </div>
+                <?php endif; ?>
+            </div>
+            <div class="modal-foot">
+                <button type="button" class="btn btn-ghost" data-close>Huỷ</button>
+                <button type="submit" class="btn btn-primary" style="background:#ef4444;border-color:#ef4444"><i class="fa-solid fa-trash-can"></i> Xác nhận xoá theo ID</button>
+            </div>
+        </form>
+    </div>
+</div>
+
 <script>
 document.addEventListener('DOMContentLoaded', () => {
+    // Chọn nhiều biến động số dư + cập nhật nút xoá 1 lượt
+    const checkAllBtx = document.getElementById('btxCheckAll');
+    const delBtxLabel = document.getElementById('btnDelBtxLabel');
+    const delBtxIdsInput = document.getElementById('delBtxIdsInput');
+    const delBtxApiPreview = document.getElementById('delBtxApiPreview');
+    const delBtxMode = document.getElementById('delBtxMode');
+    const delBtxForm = document.getElementById('deleteBankTxForm');
+
+    const getCheckedBtxIds = () => Array.from(document.querySelectorAll('.btx-row-check:checked')).map(c => c.value);
+
+    const updateBtxApiPreview = () => {
+        if (!delBtxApiPreview || !delBtxIdsInput) return;
+        const clean = delBtxIdsInput.value.replace(/[^0-9,]/g, '').replace(/,+/g, ',').replace(/^,|,$/g, '');
+        delBtxApiPreview.textContent = clean
+            ? `DELETE /api/integrations/bank-transactions?ids=${clean}`
+            : 'DELETE /api/integrations/bank-transactions?ids=...';
+    };
+
+    const syncBtxCheckState = () => {
+        const all = Array.from(document.querySelectorAll('.btx-row-check'));
+        const checked = getCheckedBtxIds();
+        if (checkAllBtx && all.length) {
+            checkAllBtx.checked = checked.length === all.length;
+            checkAllBtx.indeterminate = checked.length > 0 && checked.length < all.length;
+        }
+        if (delBtxLabel) {
+            delBtxLabel.textContent = checked.length > 0 ? `Xoá đã chọn (${checked.length})` : 'Xoá lịch sử';
+        }
+    };
+
+    if (checkAllBtx) {
+        checkAllBtx.addEventListener('change', () => {
+            document.querySelectorAll('.btx-row-check').forEach(c => { c.checked = checkAllBtx.checked; });
+            syncBtxCheckState();
+        });
+    }
+    document.querySelectorAll('.btx-row-check').forEach(c => c.addEventListener('change', syncBtxCheckState));
+    if (delBtxIdsInput) delBtxIdsInput.addEventListener('input', updateBtxApiPreview);
+
+    const openBtxDeleteModal = (idsArr) => {
+        if (delBtxMode) delBtxMode.value = 'ids';
+        if (delBtxIdsInput) delBtxIdsInput.value = (idsArr || []).join(', ');
+        updateBtxApiPreview();
+        CF.openModal('deleteBankTxModal');
+    };
+    window.__openBtxDeleteModal = openBtxDeleteModal;
+
+    const openBulkBtn = document.getElementById('btnOpenBtxDelModal');
+    if (openBulkBtn) {
+        openBulkBtn.addEventListener('click', () => openBtxDeleteModal(getCheckedBtxIds()));
+    }
+
+    const clearTabBtn = document.getElementById('btnClearCurrentTabBtx');
+    if (clearTabBtn && delBtxForm && delBtxMode) {
+        clearTabBtn.addEventListener('click', () => {
+            delBtxMode.value = 'tab';
+            delBtxForm.submit();
+        });
+    }
     // Chọn nhanh ngân hàng bằng lưới Icon trong Modal Liên kết
     const bankGrid = document.getElementById('bankPickerGrid');
     const bankSelect = document.getElementById('lkBank');
@@ -617,6 +770,14 @@ document.addEventListener('DOMContentLoaded', () => {
                     window.CF.openModal('deleteBankModal');
                 } else if (modal) {
                     modal.classList.add('open');
+                }
+                return;
+            }
+            const delOneBtx = e.target.closest('[data-del-btx-one]');
+            if (delOneBtx) {
+                e.preventDefault();
+                if (typeof window.__openBtxDeleteModal === 'function') {
+                    window.__openBtxDeleteModal([delOneBtx.dataset.delBtxOne]);
                 }
                 return;
             }

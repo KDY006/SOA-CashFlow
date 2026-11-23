@@ -1,19 +1,24 @@
-# ERD - Integration Service (Go)
+# Sơ đồ Thực thể Liên kết (ERD) & Use Case — Integration Service (Go)
 
-Database: `integration_db` (MySQL), chỉ integration-service được đọc ghi.
+Cơ sở dữ liệu: `integration_db` (MySQL 8.0 - InnoDB - utf8mb4), chỉ `integration-service` (:8085) được đọc/ghi trực tiếp.
+
+- **Sơ đồ ERD (Ảnh PNG/SVG & PlantUML):** [`erd-integration.png`](./erd-integration.png) | [`erd-integration.svg`](./erd-integration.svg) | [`erd-integration.puml`](./erd-integration.puml)
+- **Sơ đồ Use Case (Ảnh PNG/SVG & PlantUML):** [`usecase-integration.png`](./usecase-integration.png) | [`usecase-integration.svg`](./usecase-integration.svg) | [`usecase-integration.puml`](./usecase-integration.puml)
+
+## 1. Sơ đồ ERD (Mermaid)
 
 ```mermaid
 erDiagram
-    LINKED_ACCOUNTS ||--o{ BANK_TRANSACTIONS : "có nhiều biến động"
+    LINKED_ACCOUNTS ||--o{ BANK_TRANSACTIONS : "1 tài khoản có nhiều biến động (ON DELETE CASCADE)"
 
     LINKED_ACCOUNTS {
         bigint id PK
-        bigint user_id "tham chiếu logic sang auth-service"
-        varchar bank_code "VCB, TCB, MOMO..."
+        bigint user_id "Tham chiếu logic sang auth_db.users(id)"
+        varchar bank_code "VCB, TCB, BIDV, MOMO..."
         varchar account_no
         varchar holder_name
-        decimal balance "CHECK >= 0"
-        bigint version "tăng mỗi lần đổi số dư"
+        decimal balance "CHECK (balance >= 0)"
+        bigint version "Tăng mỗi lần cập nhật số dư"
         timestamp created_at
         timestamp updated_at
     }
@@ -22,17 +27,17 @@ erDiagram
         bigint id PK
         bigint account_id FK
         varchar provider
-        varchar external_ref "mã giao dịch phía ngân hàng"
+        varchar external_ref "Mã giao dịch phía ngân hàng"
         varchar idempotency_key UK
-        char request_hash "sha256 nội dung"
+        char request_hash "SHA-256 nội dung giao dịch"
         enum direction "CREDIT | DEBIT"
-        decimal amount "CHECK > 0"
+        decimal amount "CHECK (amount > 0)"
         decimal balance_after
         varchar category
         varchar description
         datetime occurred_at
         enum status "RECEIVED | SYNCING | SYNCED | FAILED | REJECTED"
-        bigint transaction_ref "id bên transaction-service"
+        bigint transaction_ref "ID bên transaction-service khi SYNCED"
         int sync_attempts
         varchar last_error
         timestamp created_at
@@ -42,7 +47,7 @@ erDiagram
     EXCHANGE_RATES {
         int id PK
         varchar currency_code UK
-        decimal rate_to_vnd "CHECK > 0"
+        decimal rate_to_vnd "CHECK (rate_to_vnd > 0)"
         timestamp updated_at
     }
 
@@ -55,20 +60,20 @@ erDiagram
     }
 ```
 
-## Ràng buộc
+## 2. Ràng buộc toàn vẹn dữ liệu
 
 | Bảng | Ràng buộc | Mục đích |
 |---|---|---|
-| `linked_accounts` | `UNIQUE (bank_code, account_no)` | 1 tài khoản ngân hàng chỉ liên kết 1 lần |
-| `linked_accounts` | `CHECK (balance >= 0)` | db tự chặn nếu code có lỗi làm âm số dư |
-| `bank_transactions` | `UNIQUE (idempotency_key)` | chống ghi trùng theo key |
-| `bank_transactions` | `UNIQUE (provider, external_ref)` | chống ghi trùng theo mã giao dịch ngân hàng, kể cả khi client đổi key |
-| `bank_transactions` | `FK account_id -> linked_accounts(id) ON DELETE CASCADE` | |
-| `bank_transactions` | `INDEX (status, updated_at)` | sweeper tìm nhanh giao dịch cần thử lại |
-| `bank_transactions` | `INDEX (account_id, occurred_at)` | xem lịch sử theo tài khoản |
+| `linked_accounts` | `UNIQUE (bank_code, account_no)` | Mỗi số tài khoản tại 1 ngân hàng chỉ được liên kết 1 lần |
+| `linked_accounts` | `CHECK (balance >= 0)` | CSDL chặn âm số dư ở tầng cuối cùng |
+| `bank_transactions` | `UNIQUE (idempotency_key)` | Chống ghi trùng biến động theo `Idempotency-Key` |
+| `bank_transactions` | `UNIQUE (provider, external_ref)` | Chống ghi trùng theo mã giao dịch ngân hàng, kể cả khi đổi key |
+| `bank_transactions` | `FK account_id -> linked_accounts(id) ON DELETE CASCADE` | Khi hủy liên kết tài khoản (`DELETE /accounts/{id}`), tự động xóa lịch sử biến động thuộc tài khoản đó |
+| `bank_transactions` | `INDEX (status, updated_at)` | Hỗ trợ Sweeper tìm nhanh các giao dịch `RECEIVED`/`FAILED` cần đồng bộ lại |
+| `bank_transactions` | `INDEX (account_id, occurred_at)` | Tối ưu truy vấn & lọc lịch sử biến động theo tài khoản |
 
-## Liên kết với service khác
+## 3. Liên kết với các Service khác trong hệ thống
 
-- `linked_accounts.user_id` -> `users.id` bên **auth-service** (không đặt khóa ngoại vì khác database)
-- `bank_transactions.transaction_ref` -> `transactions.id` bên **transaction-service**, có giá trị khi đã `SYNCED`
-- `external_webhooks` và `exchange_rates` đứng độc lập
+- `linked_accounts.user_id` → tham chiếu logic sang `users.id` của **Auth Service** (`auth_db`).
+- `bank_transactions.transaction_ref` → tham chiếu logic sang `transactions.id` của **Transaction Service** (`transaction_db`), có giá trị sau khi Worker đồng bộ thành công (`status = SYNCED`).
+- `exchange_rates` và `external_webhooks` là 2 bảng độc lập phục vụ tra cứu tỷ giá và lưu log đối soát Webhook.

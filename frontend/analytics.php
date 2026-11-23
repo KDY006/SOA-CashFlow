@@ -1,6 +1,6 @@
 <?php
 /**
- * Phân tích - Analytics Service (Python + SQLite)
+ * Phân tích - Analytics Service (Python Native + MySQL 8.0 PyMySQL)
  *  GET /api/analytics/summary · /trends · /category-breakdown · /anomalies · /reports
  *  POST /api/analytics/aggregate
  */
@@ -34,16 +34,30 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if ($action === 'aggregate_report') {
         $aggFrom = trim((string) ($_POST['from_date'] ?? $from));
         $aggTo   = trim((string) ($_POST['to_date'] ?? $to));
+        $aggSource = trim((string) ($_POST['agg_source'] ?? 'service'));
+        $customJson = trim((string) ($_POST['custom_transactions'] ?? ''));
+
         $payload = [
             'user_id'   => $uid,
             'from_date' => $aggFrom,
             'to_date'   => $aggTo,
         ];
+
+        if ($aggSource === 'inline' && $customJson !== '') {
+            $parsedTx = json_decode($customJson, true);
+            if (!is_array($parsedTx)) {
+                flash('danger', 'Danh sách giao dịch JSON không hợp lệ.');
+                redirect('analytics.php?' . http_build_query(['range' => $preset, 'from' => $from, 'to' => $to, 'months' => $months]));
+            }
+            $payload['transactions'] = $parsedTx;
+        }
+
         $r = api('POST', '/api/analytics/aggregate', $payload);
         if ($r['ok']) {
             $rep = apiData($r, []);
             $ym = sprintf('%02d/%04d', (int) ($rep['month'] ?? date('m')), (int) ($rep['year'] ?? date('Y')));
-            flash('success', "Đã tổng hợp và lưu báo cáo tháng $ym vào SQLite (" . (int) ($rep['transaction_count'] ?? 0) . " giao dịch).");
+            $rid = !empty($rep['report_id']) ? ' (ID #' . (int) $rep['report_id'] . ')' : '';
+            flash('success', "Đã tổng hợp và lưu báo cáo tháng $ym$rid vào MySQL analytics_db (" . (int) ($rep['transaction_count'] ?? 0) . " giao dịch).");
         } else {
             flash('danger', 'Không thể tạo báo cáo tổng hợp: ' . $r['error']);
         }
@@ -105,14 +119,14 @@ $cardWidget = renderHeroBankCard(
     'visa'
 );
 
-$heroDesc = 'Phân hệ phân tích và dự báo dòng tiền ứng dụng thống kê & Machine Learning (Python Native + SQLite). Tự động phân tích chuỗi thời gian, phát hiện chi tiêu bất thường (MAD Z-Score) và lưu trữ báo cáo tổng hợp hàng tháng.'
+$heroDesc = 'Phân hệ phân tích và dự báo dòng tiền ứng dụng thống kê & Machine Learning (Python Native + MySQL 8.0 PyMySQL). Tự động phân tích chuỗi thời gian, phát hiện chi tiêu bất thường (MAD Z-Score) và lưu trữ báo cáo tổng hợp hàng tháng vào <code>analytics_db.monthly_reports</code>.'
     . '<div class="luxury-hero-actions">'
-    . '<button type="button" class="btn-hero-pri" data-open="aggregateModal"><i class="fa-solid fa-file-Waveform"></i> <i class="fa-solid fa-database"></i> Chốt & Lưu báo cáo tháng (SQLite)</button>'
+    . '<button type="button" class="btn-hero-pri" data-open="aggregateModal"><i class="fa-solid fa-database"></i> Chốt & Lưu báo cáo tháng (MySQL)</button>'
     . '<a class="btn-hero-sec" href="#savedReportsSection"><i class="fa-solid fa-folder-tree"></i> Báo cáo đã lưu (' . count($savedReports) . ')</a>'
     . '<a class="btn-hero-sec" href="transactions.php"><i class="fa-solid fa-receipt"></i> Dữ liệu giao dịch</a>'
     . '</div>';
 
-pageHero('Analytics Service · Python + SQLite',
+pageHero('Analytics Service · Python + MySQL 8.0',
     'Phân Tích & Dự Báo Dòng Tiền',
     $heroDesc,
     $cardWidget);
@@ -245,14 +259,14 @@ pageHero('Analytics Service · Python + SQLite',
     <?php endif; ?>
 </section>
 
-<!-- Kho báo cáo tháng đã lưu trong SQLite (GET /api/analytics/reports & POST /api/analytics/aggregate) -->
+<!-- Kho báo cáo tháng đã lưu trong MySQL (GET /api/analytics/reports & POST /api/analytics/aggregate) -->
 <section class="panel" id="savedReportsSection">
     <div class="panel-head" style="flex-wrap:wrap;gap:1rem">
         <div class="panel-title">
             <span class="p-icon blue"><i class="fa-solid fa-database"></i></span>
             <div>
-                <h3>Báo cáo tháng đã lưu (SQLite)</h3>
-                <p>GET /api/analytics/reports · POST /api/analytics/aggregate</p>
+                <h3>Báo cáo tháng đã lưu (MySQL · analytics_db)</h3>
+                <p>GET /api/analytics/reports · POST /api/analytics/aggregate · Upsert theo (user_id, year, month)</p>
             </div>
         </div>
         <div style="display:flex;gap:.65rem;align-items:center;flex-wrap:wrap">
@@ -285,7 +299,7 @@ pageHero('Analytics Service · Python + SQLite',
     </div>
 
     <?php if (!$savedReports): ?>
-        <?= emptyState('fa-database', 'Chưa có báo cáo tháng nào trong SQLite', 'Nhấn "Chốt & Lưu báo cáo kỳ này" để tổng hợp dữ liệu giao dịch và lưu vào bảng monthly_reports.') ?>
+        <?= emptyState('fa-database', 'Chưa có báo cáo tháng nào trong MySQL (analytics_db)', 'Nhấn "Chốt & Lưu báo cáo kỳ này" để tổng hợp dữ liệu giao dịch và lưu vào bảng monthly_reports.') ?>
     <?php else: ?>
         <div class="table-wrap">
             <table class="table">
@@ -304,6 +318,7 @@ pageHero('Analytics Service · Python + SQLite',
                 </thead>
                 <tbody>
                 <?php foreach ($savedReports as $idx => $rep):
+                    $rid = (int) ($rep['report_id'] ?? 0);
                     $ry = (int) ($rep['year'] ?? 0);
                     $rm = (int) ($rep['month'] ?? 0);
                     $rNetVal = (float) ($rep['net_cashflow'] ?? 0);
@@ -318,6 +333,9 @@ pageHero('Analytics Service · Python + SQLite',
                                 <span class="cat-icon" style="--c:#0066cc"><i class="fa-solid fa-calendar-check"></i></span>
                                 <div>
                                     <strong class="t-ink">Tháng <?= sprintf('%02d/%04d', $rm, $ry) ?></strong>
+                                    <?php if ($rid > 0): ?>
+                                        <span class="pill" style="margin-left:.3rem;font-size:.66rem;padding:.08rem .4rem;background:rgba(15,23,42,.06);color:#475569">ID #<?= $rid ?></span>
+                                    <?php endif; ?>
                                     <div class="small t-muted">User #<?= (int) ($rep['user_id'] ?? $uid) ?></div>
                                 </div>
                             </div>
@@ -355,10 +373,10 @@ pageHero('Analytics Service · Python + SQLite',
 
 <!-- Modal tạo báo cáo tổng hợp tháng (POST /api/analytics/aggregate) -->
 <div class="modal" id="aggregateModal">
-    <div class="modal-dialog" style="max-width:480px">
+    <div class="modal-dialog" style="max-width:540px">
         <div class="modal-head">
             <span class="p-icon blue"><i class="fa-solid fa-database"></i></span>
-            <div style="flex:1"><h3>Tổng hợp & Lưu báo cáo tháng</h3><p>POST /api/analytics/aggregate · Lưu vào SQLite</p></div>
+            <div style="flex:1"><h3>Tổng hợp & Lưu báo cáo tháng</h3><p>POST /api/analytics/aggregate · Lưu vào MySQL 8 (analytics_db)</p></div>
             <button type="button" class="modal-close" data-close><i class="fa-solid fa-xmark"></i></button>
         </div>
         <form method="post">
@@ -366,7 +384,7 @@ pageHero('Analytics Service · Python + SQLite',
             <input type="hidden" name="action" value="aggregate_report">
             <div class="modal-body">
                 <p class="small t-muted" style="margin-top:0;margin-bottom:1rem">
-                    Hệ thống sẽ tự động lấy toàn bộ giao dịch từ <b>Transaction Service</b> trong khoảng ngày bên dưới, tính toán tổng thu/chi, cơ cấu danh mục, điểm bất thường và lưu bản ghi vào bảng <code>monthly_reports</code> (SQLite) theo tháng/năm của ngày kết thúc.
+                    Tổng hợp thu/chi, cơ cấu danh mục, điểm bất thường (MAD Z-Score) và lưu/cập nhật vào bảng <code>monthly_reports</code> (MySQL <code>analytics_db</code>) theo tháng/năm của ngày kết thúc.
                 </p>
                 <div class="form-grid">
                     <div class="field">
@@ -377,11 +395,27 @@ pageHero('Analytics Service · Python + SQLite',
                         <label for="aggTo">Đến ngày (xác định Tháng/Năm)</label>
                         <input class="input" type="date" id="aggTo" name="to_date" value="<?= e($to) ?>" required>
                     </div>
+                    <div class="field full">
+                        <label for="aggSource">Nguồn dữ liệu giao dịch</label>
+                        <select class="select" id="aggSource" name="agg_source">
+                            <option value="service">Tự động lấy từ Transaction Service (:8082)</option>
+                            <option value="inline">Gửi trực tiếp mảng transactions trong JSON body (Chế độ Demo)</option>
+                        </select>
+                    </div>
+                    <div class="field full" id="aggInlineBox" style="display:none">
+                        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.35rem">
+                            <label for="aggCustomTx" style="margin:0">Dữ liệu <code>transactions</code> gửi kèm body</label>
+                            <button type="button" class="btn btn-ghost btn-sm" id="btnFillDemoTx" style="padding:.2rem .55rem;font-size:.75rem">
+                                <i class="fa-solid fa-wand-magic-sparkles"></i> Nạp mẫu có bất thường
+                            </button>
+                        </div>
+                        <textarea class="input" id="aggCustomTx" name="custom_transactions" rows="6" style="font-family:'JetBrains Mono',monospace;font-size:.78rem"></textarea>
+                    </div>
                 </div>
             </div>
             <div class="modal-foot">
                 <button type="button" class="btn btn-ghost" data-close>Huỷ</button>
-                <button type="submit" class="btn btn-primary"><i class="fa-solid fa-floppy-disk"></i> Tổng hợp & Lưu SQLite</button>
+                <button type="submit" class="btn btn-primary"><i class="fa-solid fa-floppy-disk"></i> Tổng hợp & Lưu MySQL</button>
             </div>
         </form>
     </div>
@@ -389,10 +423,10 @@ pageHero('Analytics Service · Python + SQLite',
 
 <!-- Modal xem chi tiết báo cáo tháng -->
 <div class="modal" id="reportDetailModal">
-    <div class="modal-dialog" style="max-width:600px">
+    <div class="modal-dialog" style="max-width:620px">
         <div class="modal-head">
             <span class="p-icon violet"><i class="fa-solid fa-file-invoice"></i></span>
-            <div style="flex:1"><h3 id="repModalTitle">Chi tiết báo cáo tháng</h3><p id="repModalSub">Bản ghi từ SQLite monthly_reports</p></div>
+            <div style="flex:1"><h3 id="repModalTitle">Chi tiết báo cáo tháng</h3><p id="repModalSub">Bản ghi từ MySQL analytics_db.monthly_reports</p></div>
             <button type="button" class="modal-close" data-close><i class="fa-solid fa-xmark"></i></button>
         </div>
         <div class="modal-body" id="repModalBody"></div>
@@ -451,20 +485,57 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    // Xem chi tiết báo cáo tháng từ SQLite
+    // Chuyển đổi nguồn dữ liệu trong modal Tổng hợp báo cáo
+    const aggSource = document.getElementById('aggSource');
+    const aggInlineBox = document.getElementById('aggInlineBox');
+    const aggCustomTx = document.getElementById('aggCustomTx');
+    const btnFillDemoTx = document.getElementById('btnFillDemoTx');
+
+    const fillDemoTxJson = () => {
+        if (!aggCustomTx) return;
+        const fDate = document.getElementById('aggFrom')?.value || '<?= e($from) ?>';
+        const sample = [
+            { id: 101, amount: 25000000, type: 'INCOME', category: 'Lương cố định', transaction_date: fDate },
+            { id: 102, amount: 50000, type: 'EXPENSE', category: 'Ăn uống', transaction_date: fDate },
+            { id: 103, amount: 65000, type: 'EXPENSE', category: 'Ăn uống', transaction_date: fDate },
+            { id: 104, amount: 55000, type: 'EXPENSE', category: 'Ăn uống', transaction_date: fDate },
+            { id: 105, amount: 4500000, type: 'EXPENSE', category: 'Ăn uống', transaction_date: fDate },
+            { id: 106, amount: 6000000, type: 'EXPENSE', category: 'Tiền nhà & Tiện ích', transaction_date: fDate }
+        ];
+        aggCustomTx.value = JSON.stringify(sample, null, 2);
+    };
+
+    if (aggSource && aggInlineBox) {
+        aggSource.addEventListener('change', () => {
+            const isInline = aggSource.value === 'inline';
+            aggInlineBox.style.display = isInline ? 'block' : 'none';
+            if (isInline && aggCustomTx && !aggCustomTx.value.trim()) fillDemoTxJson();
+        });
+    }
+    if (btnFillDemoTx) btnFillDemoTx.addEventListener('click', fillDemoTxJson);
+
+    // Xem chi tiết báo cáo tháng từ MySQL
     document.addEventListener('click', e => {
         const btn = e.target.closest('[data-view-report]');
         if (!btn) return;
         const rep = JSON.parse(btn.dataset.viewReport);
         const ym = String(rep.month || '').padStart(2, '0') + '/' + rep.year;
-        document.getElementById('repModalTitle').textContent = 'Báo cáo Tháng ' + ym;
-        document.getElementById('repModalSub').textContent = 'Lưu lúc: ' + (rep.generated_at || '—') + ' · ' + (rep.transaction_count || 0) + ' giao dịch';
+        const ridTxt = rep.report_id ? ` (ID #${rep.report_id})` : '';
+        document.getElementById('repModalTitle').textContent = 'Báo cáo Tháng ' + ym + ridTxt;
+        document.getElementById('repModalSub').textContent = 'Lưu lúc: ' + (rep.generated_at || '—') + ' · ' + (rep.transaction_count || 0) + ' giao dịch · MySQL analytics_db';
         const cats = (rep.category_breakdown || []).map(c =>
             `<div style="display:flex;justify-content:space-between;padding:.4rem 0;border-bottom:1px dashed #e2e8f0">
-                <span><b>${c.category}</b> (${c.percentage}%)</span>
+                <span><b>${CF.esc(c.category)}</b> (${c.percentage}%)</span>
                 <span class="money">${CF.vnd(c.amount)}</span>
             </div>`
         ).join('') || '<p class="small t-muted">Không có khoản chi nào.</p>';
+
+        const anoms = (rep.anomalies || []).map(a =>
+            `<div style="display:flex;justify-content:space-between;padding:.4rem 0;border-bottom:1px dashed #fde68a;font-size:.84rem">
+                <span><strong class="t-red">#${a.transaction_id}</strong> · ${CF.esc(a.category)} (${a.transaction_date})</span>
+                <span><b class="money t-red">${CF.vnd(a.amount)}</b> <small class="t-muted">(ngưỡng ${CF.vnd(a.threshold)})</small></span>
+            </div>`
+        ).join('') || '<p class="small t-muted">Không có giao dịch bất thường trong kỳ này.</p>';
 
         document.getElementById('repModalBody').innerHTML = `
             <div class="grid grid-3" style="gap:.75rem;margin-bottom:1rem">
@@ -483,8 +554,10 @@ document.addEventListener('DOMContentLoaded', () => {
             </div>
             <h4 style="margin:.5rem 0">Cơ cấu chi tiêu theo danh mục</h4>
             <div style="margin-bottom:1rem">${cats}</div>
+            <h4 style="margin:.5rem 0">Cảnh báo chi tiêu bất thường (${(rep.anomalies || []).length})</h4>
+            <div style="margin-bottom:1rem">${anoms}</div>
             <details>
-                <summary class="small t-muted" style="cursor:pointer;font-weight:600">Xem JSON nguyên bản trong SQLite</summary>
+                <summary class="small t-muted" style="cursor:pointer;font-weight:600">Xem JSON nguyên bản trong MySQL (monthly_reports)</summary>
                 <pre style="margin-top:.5rem;padding:.75rem;background:#0f172a;color:#e2e8f0;border-radius:10px;font-size:.78rem;overflow:auto;max-height:200px">${JSON.stringify(rep, null, 2)}</pre>
             </details>
         `;

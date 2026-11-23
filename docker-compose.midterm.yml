@@ -107,7 +107,7 @@ services:
       - midterm-network
 
   # ---------------------------------------------------------------------------
-  # 4. ANALYTICS SERVICE (Thành viên 4 - Python Native http.server)
+  # 4. ANALYTICS SERVICE (Thành viên 4 - Python Native http.server + MySQL)
   # ---------------------------------------------------------------------------
   analytics-service:
     build:
@@ -265,7 +265,7 @@ services:
       - midterm-network
 
 # =============================================================================
-# MẠNG NỘI BỘ
+# MẠNG NỘI BỘ & VOLUMES
 # =============================================================================
 volumes:
   analytics_midterm_db_data:

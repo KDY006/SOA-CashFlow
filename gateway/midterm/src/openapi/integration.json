@@ -822,63 +822,145 @@
           "Webhook ngân hàng"
         ],
         "operationId": "bankWebhook",
-        "summary": "Nhận webhook biến động số dư từ ngân hàng",
-        "description": "Ghi nhận 1 biến động số dư (CREDIT cộng / DEBIT trừ) vào tài khoản liên kết khớp `bank_code` + `account_no`, rồi đẩy sang transaction-service ở background.\n\n- **Idempotent**: key = header `Idempotency-Key`, nếu không có thì dùng `provider:external_ref`. Gửi lại đúng nội dung → 200 `duplicate: true`; dùng lại key cho nội dung khác → 409.\n- DEBIT vượt số dư → giao dịch vẫn được lưu với trạng thái `REJECTED` và trả **422** (`success: false`).\n- Nếu service cấu hình `WEBHOOK_SECRET` thì bắt buộc header `X-Signature` = hex(HMAC-SHA256(raw body, secret)); để trống thì bỏ qua kiểm tra (mặc định khi demo).\n- Qua Gateway endpoint này vẫn yêu cầu JWT (không nằm trong danh sách public).\n- Giao dịch ≥ `LARGE_AMOUNT_ALERT` (mặc định 10.000.000đ) sẽ phát thông báo `LARGE_TRANSACTION` sang notification-service.",
+        "summary": "Nhận webhook biến động số dư từ ngân hàng (Hỗ trợ Form test nhanh & JSON)",
+        "description": "Ghi nhận 1 biến động số dư (`CREDIT` cộng tiền / `DEBIT` trừ tiền) vào tài khoản liên kết, rồi đẩy sang `transaction-service` ở background.\n\n### Cách test nhanh trên Swagger UI:\n1. **Chế độ Form điền nhanh (`application/x-www-form-urlencoded` - Mặc định)**: Chỉ cần chọn `account_id` (`1` = VCB, `2` = MoMo, `3` = TCB, `4` = BIDV), chọn `direction` (`CREDIT` / `DEBIT`), nhập `amount` và bấm **Execute**. Để trống `external_ref` hệ thống sẽ **tự động sinh mã giao dịch mới** mỗi lần bấm!\n2. **Chế độ JSON (`application/json`)**: Chọn 1 trong **6 kịch bản dựng sẵn** ở ô **Examples** (Cộng tiền, Trừ tiền, Test chống trùng Idempotency, Test biến động lớn ≥ 10 triệu, Test trừ vượt số dư `REJECTED`).\n3. Hai ô header `Idempotency-Key` và `X-Signature` đã được để trống mặc định để không gây lỗi `409 Conflict` khi bạn đổi số tiền giữa các lần bấm.",
         "parameters": [
           {
             "name": "Idempotency-Key",
             "in": "header",
             "required": false,
-            "description": "Khóa chống xử lý trùng (tối đa 150 ký tự). Mặc định = provider:external_ref",
+            "description": "Để trống khi test thông thường (hệ thống tự lấy theo `provider:external_ref`). Chỉ điền khi muốn test custom Idempotency-Key.",
             "schema": {
               "type": "string",
               "maxLength": 150
-            },
-            "example": "VCB:FT26293001234"
+            }
           },
           {
             "name": "X-Signature",
             "in": "header",
             "required": false,
-            "description": "Chữ ký hex HMAC-SHA256 của raw body. Chỉ bắt buộc khi service đặt WEBHOOK_SECRET.",
+            "description": "Để trống khi demo (chỉ bắt buộc khi biến môi trường `WEBHOOK_SECRET` được bật).",
             "schema": {
               "type": "string"
-            },
-            "example": "3f1c9a0e5b7d..."
+            }
           }
         ],
         "requestBody": {
           "required": true,
           "content": {
+            "application/x-www-form-urlencoded": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "direction",
+                  "amount"
+                ],
+                "properties": {
+                  "account_id": {
+                    "type": "integer",
+                    "enum": [1, 2, 3, 4],
+                    "default": 1,
+                    "description": "Chọn nhanh tài khoản liên kết: 1 = VCB (0071000123456) | 2 = MOMO (0909123456) | 3 = TCB (19033445566011) | 4 = BIDV (31410001234567)"
+                  },
+                  "direction": {
+                    "type": "string",
+                    "enum": ["CREDIT", "DEBIT"],
+                    "default": "CREDIT",
+                    "description": "CREDIT = Tiền vào (+), DEBIT = Tiền ra (-)"
+                  },
+                  "amount": {
+                    "type": "number",
+                    "default": 500000,
+                    "description": "Số tiền biến động (VND). Nhập >= 10000000 để test thông báo biến động lớn."
+                  },
+                  "category": {
+                    "type": "string",
+                    "default": "Lương cố định",
+                    "description": "Danh mục giao dịch (vd: Lương cố định, Ăn uống & Cà phê, Mua sắm & Giải trí)"
+                  },
+                  "description": {
+                    "type": "string",
+                    "default": "Test biến động số dư qua Swagger",
+                    "description": "Nội dung chuyển khoản / biến động"
+                  },
+                  "external_ref": {
+                    "type": "string",
+                    "default": "",
+                    "description": "Mặc định ĐỂ TRỐNG = tự sinh mã mới mỗi lần bấm Execute. Điền mã cố định (vd: FT26293001234) nếu muốn bấm 2 lần liên tiếp để test chống trùng Idempotency."
+                  }
+                }
+              }
+            },
             "application/json": {
               "schema": {
                 "$ref": "#/components/schemas/WebhookRequest"
               },
               "examples": {
-                "credit": {
-                  "summary": "Tiền vào (CREDIT)",
+                "1_credit_auto": {
+                  "summary": "1. Cộng tiền nhanh (+1.500.000đ · Tự sinh mã GD mới mỗi lần bấm)",
+                  "value": {
+                    "account_id": 1,
+                    "direction": "CREDIT",
+                    "amount": 1500000,
+                    "category": "Lương cố định",
+                    "description": "Nhận tiền thưởng tháng 10"
+                  }
+                },
+                "2_debit_auto": {
+                  "summary": "2. Trừ tiền nhanh (-250.000đ · Tự sinh mã GD mới mỗi lần bấm)",
+                  "value": {
+                    "account_id": 1,
+                    "direction": "DEBIT",
+                    "amount": 250000,
+                    "category": "Ăn uống & Cà phê",
+                    "description": "Thanh toán QR quán ăn"
+                  }
+                },
+                "3_idempotency": {
+                  "summary": "3. Test chống trùng Idempotency (Gửi lặp lại cùng mã FT26293001234)",
                   "value": {
                     "provider": "VCB",
                     "external_ref": "FT26293001234",
                     "bank_code": "VCB",
-                    "account_no": "0011001234567",
+                    "account_no": "0071000123456",
                     "direction": "CREDIT",
-                    "amount": 1500000,
-                    "category": "Lương",
-                    "description": "Chuyen tien luong thang 10",
-                    "occurred_at": "2026-10-20 14:30:00"
+                    "amount": 500000,
+                    "category": "Lương cố định",
+                    "description": "Test gửi trùng cùng mã giao dịch FT26293001234"
                   }
                 },
-                "debit": {
-                  "summary": "Tiền ra (DEBIT)",
+                "4_large_alert": {
+                  "summary": "4. Test biến động lớn >= 10 triệu (Phát cảnh báo Notification)",
+                  "value": {
+                    "account_id": 1,
+                    "direction": "CREDIT",
+                    "amount": 15000000,
+                    "category": "Lương cố định",
+                    "description": "Chuyển khoản biến động lớn >= 10tr"
+                  }
+                },
+                "5_rejected": {
+                  "summary": "5. Test trừ vượt số dư (Trả về 422 REJECTED + Cảnh báo)",
+                  "value": {
+                    "account_id": 1,
+                    "direction": "DEBIT",
+                    "amount": 999000000,
+                    "category": "Mua sắm & Giải trí",
+                    "description": "Test giao dịch vượt quá số dư khả dụng"
+                  }
+                },
+                "6_full_payload": {
+                  "summary": "6. Payload ngân hàng chuẩn đầy đủ (VCB · 0071000123456)",
                   "value": {
                     "provider": "VCB",
-                    "external_ref": "FT26293005678",
-                    "account_no": "0011001234567",
-                    "direction": "DEBIT",
-                    "amount": 250000,
-                    "category": "Ăn uống",
-                    "description": "Thanh toan QR quan an"
+                    "external_ref": "AUTO",
+                    "bank_code": "VCB",
+                    "account_no": "0071000123456",
+                    "direction": "CREDIT",
+                    "amount": 1200000,
+                    "category": "Lương cố định",
+                    "description": "CTY ABC TRA THUONG",
+                    "occurred_at": "2026-10-21 14:30:00"
                   }
                 }
               }
@@ -1112,6 +1194,125 @@
         }
       }
     },
+    "/api/integrations/bank-transactions": {
+      "delete": {
+        "tags": [
+          "Webhook ngân hàng"
+        ],
+        "operationId": "batchDeleteBankTransactions",
+        "summary": "Xoá nhiều lịch sử biến động số dư (theo danh sách ID hoặc theo trạng thái)",
+        "description": "Xoá một lượt nhiều bản ghi lịch sử biến động số dư (`bank_transactions`).\n\n- Điền trực tiếp danh sách ID vào ô query **`ids`** cách nhau bởi dấu phẩy (ví dụ: `12,15,18`), hoặc gửi JSON body `{\"ids\": [12, 15, 18]}`.\n- Hoặc chọn **`account_id`** kèm **`status`** (`RECEIVED`, `SYNCED`, `FAILED`, `REJECTED`) để xoá toàn bộ lịch sử của tab trạng thái đó.",
+        "parameters": [
+          {
+            "name": "ids",
+            "in": "query",
+            "required": false,
+            "description": "Danh sách ID biến động cần xoá, cách nhau bởi dấu phẩy (ví dụ: 12,15,18). Xem ID # trên bảng Biến động số dư ở trang Ngân hàng.",
+            "schema": {
+              "type": "string"
+            },
+            "example": "12,15,18"
+          },
+          {
+            "name": "account_id",
+            "in": "query",
+            "required": false,
+            "description": "ID tài khoản ngân hàng liên kết (tuỳ chọn nếu muốn xoá theo tài khoản / trạng thái)",
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 1
+            }
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "description": "Lọc theo tab trạng thái cần xoá (bỏ trống = xoá mọi trạng thái khớp ids/account_id)",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "RECEIVED",
+                "SYNCING",
+                "SYNCED",
+                "FAILED",
+                "REJECTED"
+              ]
+            }
+          }
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "ids": {
+                    "type": "array",
+                    "items": {
+                      "type": "integer",
+                      "format": "int64"
+                    },
+                    "description": "Mảng các ID biến động cần xoá 1 lượt"
+                  },
+                  "account_id": {
+                    "type": "integer",
+                    "format": "int64",
+                    "description": "ID tài khoản liên kết (tuỳ chọn)"
+                  },
+                  "status": {
+                    "type": "string",
+                    "enum": [
+                      "RECEIVED",
+                      "SYNCING",
+                      "SYNCED",
+                      "FAILED",
+                      "REJECTED"
+                    ]
+                  }
+                }
+              },
+              "example": {
+                "ids": [12, 15, 18]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Đã xoá các bản ghi lịch sử biến động số dư",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                },
+                "example": {
+                  "success": true,
+                  "message": "đã xoá 3 bản ghi lịch sử biến động số dư",
+                  "data": {
+                    "deleted_count": 3,
+                    "ids": [12, 15, 18],
+                    "account_id": 0,
+                    "status": ""
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Thiếu danh sách ids / account_id hoặc sai định dạng",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IntegrationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/integrations/bank-transactions/{id}": {
       "get": {
         "tags": [
@@ -1222,6 +1423,71 @@
                   "success": false,
                   "error": "INTERNAL_ERROR",
                   "message": "lỗi hệ thống, vui lòng thử lại"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Webhook ngân hàng"
+        ],
+        "operationId": "deleteBankTransaction",
+        "summary": "Xoá một bản ghi lịch sử biến động số dư theo ID",
+        "description": "Xoá 1 dòng lịch sử biến động số dư (`bank_transactions`) theo `id`. Người dùng thường chỉ xoá được biến động thuộc tài khoản ngân hàng của mình; `ADMIN` có thể xoá bất kỳ.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "ID biến động số dư cần xoá (hiển thị dạng #ID trên bảng Biến động số dư)",
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 1
+            },
+            "example": 10
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Đã xoá lịch sử biến động thành công",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BankTransactionResponse"
+                },
+                "example": {
+                  "success": true,
+                  "message": "xoá lịch sử biến động thành công",
+                  "data": {
+                    "id": 10,
+                    "account_id": 1,
+                    "provider": "VCB",
+                    "external_ref": "SIM1792485847-0024",
+                    "idempotency_key": "VCB:SIM1792485847-0024",
+                    "direction": "CREDIT",
+                    "amount": 47000,
+                    "balance_after": 17018000,
+                    "category": "",
+                    "description": "Giả lập biến động từ ngân hàng",
+                    "occurred_at": "2026-10-20T15:44:00+07:00",
+                    "status": "RECEIVED",
+                    "transaction_ref": null,
+                    "sync_attempts": 0,
+                    "created_at": "2026-10-20T15:44:00+07:00"
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Không tìm thấy biến động hoặc không thuộc tài khoản của bạn",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IntegrationError"
                 }
               }
             }
@@ -1854,24 +2120,27 @@
       "WebhookRequest": {
         "type": "object",
         "required": [
-          "provider",
-          "external_ref",
-          "account_no",
           "direction",
           "amount"
         ],
         "properties": {
+          "account_id": {
+            "type": "integer",
+            "format": "int64",
+            "description": "ID tài khoản liên kết (1 = VCB, 2 = MoMo, 3 = TCB, 4 = BIDV). Nếu truyền account_id thì không cần nhớ bank_code + account_no.",
+            "example": 1
+          },
           "provider": {
             "type": "string",
             "maxLength": 20,
-            "description": "Mã ngân hàng gửi webhook (tự in hoa)",
+            "description": "Mã ngân hàng gửi webhook (bỏ trống sẽ tự lấy theo bank_code của tài khoản)",
             "example": "VCB"
           },
           "external_ref": {
             "type": "string",
             "maxLength": 100,
-            "description": "Mã giao dịch phía ngân hàng",
-            "example": "FT26293001234"
+            "description": "Mã giao dịch phía ngân hàng (bỏ trống hoặc điền AUTO sẽ tự sinh mã mới mỗi lần gọi)",
+            "example": "AUTO"
           },
           "bank_code": {
             "type": "string",
@@ -1880,7 +2149,7 @@
           },
           "account_no": {
             "type": "string",
-            "example": "0011001234567"
+            "example": "0071000123456"
           },
           "direction": {
             "type": "string",
@@ -1888,7 +2157,7 @@
               "CREDIT",
               "DEBIT"
             ],
-            "description": "Không phân biệt hoa thường"
+            "description": "CREDIT (Tiền vào) hoặc DEBIT (Tiền ra)"
           },
           "amount": {
             "type": "number",
@@ -1900,7 +2169,7 @@
           "category": {
             "type": "string",
             "maxLength": 100,
-            "example": "Lương"
+            "example": "Lương cố định"
           },
           "description": {
             "type": "string",
@@ -1910,7 +2179,7 @@
           "occurred_at": {
             "type": "string",
             "description": "RFC3339 hoặc \"YYYY-MM-DD HH:mm:ss\" / \"YYYY-MM-DDTHH:mm:ss\" (giờ địa phương). Mặc định = thời điểm nhận",
-            "example": "2026-10-20 14:30:00"
+            "example": "2026-10-21 14:30:00"
           }
         }
       },

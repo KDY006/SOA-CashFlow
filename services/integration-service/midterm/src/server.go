@@ -47,7 +47,9 @@ func (s *Server) routes() http.Handler {
 	mux.HandleFunc("GET /api/integrations/accounts/{id}/transactions", s.handleAccountTransactions)
 
 	mux.HandleFunc("POST /api/integrations/webhooks/banking", s.handleBankWebhook)
+	mux.HandleFunc("DELETE /api/integrations/bank-transactions", s.handleBatchDeleteBankTx)
 	mux.HandleFunc("GET /api/integrations/bank-transactions/{id}", s.handleGetBankTx)
+	mux.HandleFunc("DELETE /api/integrations/bank-transactions/{id}", s.handleDeleteBankTx)
 	mux.HandleFunc("POST /api/integrations/bank-transactions/{id}/retry", s.handleRetrySync)
 
 	mux.HandleFunc("POST /api/integrations/simulate", s.handleSimulate)
