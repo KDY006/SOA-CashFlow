@@ -24,6 +24,17 @@ internal static class Program
             Console.Error.WriteLine($"[Asset Service] Failed to start HttpListener: {ex.Message}");
             return;
         }
+        
+        try
+        {
+            listener.Start();
+            Console.WriteLine($"[Asset Service Native C#] Running on http://{host}:{port}/...");
+        }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine($"[Asset Service] Failed to start HttpListener: {ex.Message}");
+            return;
+        }
 
         while (listener.IsListening)
         {
