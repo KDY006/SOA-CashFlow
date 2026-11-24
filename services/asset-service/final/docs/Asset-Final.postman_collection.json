@@ -1,0 +1,1083 @@
+{
+  "info": {
+    "name": "CashFlow - Asset Service Final",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "description": "Run with a disposable test DB. Set ACCESS_TOKEN manually or run Login via Gateway first. CRUD creates and deletes temporary records. BASE_URL can be direct or Gateway."
+  },
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      {
+        "key": "token",
+        "value": "{{ACCESS_TOKEN}}",
+        "type": "string"
+      }
+    ]
+  },
+  "variable": [
+    {
+      "key": "BASE_URL",
+      "value": "http://localhost:8083"
+    },
+    {
+      "key": "DIRECT_URL",
+      "value": "http://localhost:8083"
+    },
+    {
+      "key": "GATEWAY_URL",
+      "value": "http://localhost:8080"
+    },
+    {
+      "key": "ACCESS_TOKEN",
+      "value": ""
+    },
+    {
+      "key": "USERNAME",
+      "value": "admin"
+    },
+    {
+      "key": "PASSWORD",
+      "value": "password123"
+    },
+    {
+      "key": "ASSET_ID",
+      "value": ""
+    },
+    {
+      "key": "LOAN_ID",
+      "value": ""
+    },
+    {
+      "key": "INVESTMENT_ID",
+      "value": ""
+    }
+  ],
+  "item": [
+    {
+      "name": "Health and auth",
+      "item": [
+        {
+          "name": "Health",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{DIRECT_URL}}/health",
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Readiness",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{DIRECT_URL}}/health/ready",
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Reject spoofed identity / missing JWT",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-User-Id",
+                "value": "1"
+              },
+              {
+                "key": "X-User-Role",
+                "value": "ADMIN"
+              }
+            ],
+            "url": "{{DIRECT_URL}}/api/assets",
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 401\", () => pm.response.to.have.status(401));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Login via Gateway (optional if ACCESS_TOKEN already set)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{GATEWAY_URL}}/api/auth/login",
+            "auth": {
+              "type": "noauth"
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"username\": \"{{USERNAME}}\",\n  \"password\": \"{{PASSWORD}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+                  "const b=pm.response.json(); const d=b.data||b; const t=d.access_token||d.accessToken||d.token; pm.test(\"JWT returned\",()=>pm.expect(t).to.be.a(\"string\")); if(t) pm.collectionVariables.set(\"ACCESS_TOKEN\",t);"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Assets",
+      "item": [
+        {
+          "name": "List",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{BASE_URL}}/api/assets"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Create temporary record",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{BASE_URL}}/api/assets",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"asset_name\": \"Final API demo\",\n  \"asset_type\": \"DEVICE\",\n  \"purchase_price\": 12000000,\n  \"current_value\": 10000000,\n  \"salvage_value\": 2000000,\n  \"useful_life_years\": 4,\n  \"purchase_date\": \"2026-01-01\",\n  \"currency\": \"VND\",\n  \"note\": \"Postman temporary record\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.collectionVariables.unset(\"ASSET_ID\");"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 201\", () => pm.response.to.have.status(201));",
+                  "pm.collectionVariables.set(\"ASSET_ID\",pm.response.json().id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get created record",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{BASE_URL}}/api/assets/{{ASSET_ID}}"
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (!pm.collectionVariables.get(\"ASSET_ID\")) { throw new Error(\"Create temporary record first\"); }"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Update created record",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{BASE_URL}}/api/assets/{{ASSET_ID}}",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"asset_name\": \"Final API demo\",\n  \"asset_type\": \"DEVICE\",\n  \"purchase_price\": 12000000,\n  \"current_value\": 9000000,\n  \"salvage_value\": 2000000,\n  \"useful_life_years\": 4,\n  \"purchase_date\": \"2026-01-01\",\n  \"currency\": \"VND\",\n  \"note\": \"Postman temporary record\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (!pm.collectionVariables.get(\"ASSET_ID\")) { throw new Error(\"Create temporary record first\"); }"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "History",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{BASE_URL}}/api/assets/{{ASSET_ID}}/history"
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (!pm.collectionVariables.get(\"ASSET_ID\")) { throw new Error(\"Create temporary record first\"); }"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"Two snapshots\",()=>pm.expect(pm.response.json().length).to.be.at.least(2));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Valuation",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{BASE_URL}}/api/assets/{{ASSET_ID}}/valuation?as_of=2028-01-01"
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (!pm.collectionVariables.get(\"ASSET_ID\")) { throw new Error(\"Create temporary record first\"); }"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Depreciation",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{BASE_URL}}/api/assets/depreciation",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"purchase_price\": 12000000,\n  \"salvage_value\": 2000000,\n  \"useful_life_years\": 4\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"Annual depreciation\",()=>pm.expect(pm.response.json().annual_depreciation).to.eql(2500000));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Reject invalid salvage",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{BASE_URL}}/api/assets/depreciation",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"purchase_price\": 100,\n  \"salvage_value\": 200,\n  \"useful_life_years\": 4\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 400\", () => pm.response.to.have.status(400));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Net worth",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{BASE_URL}}/api/assets/net-worth"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Delete temporary record",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": "{{BASE_URL}}/api/assets/{{ASSET_ID}}"
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (!pm.collectionVariables.get(\"ASSET_ID\")) { throw new Error(\"Create temporary record first\"); }"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Deleted record not found",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{BASE_URL}}/api/assets/{{ASSET_ID}}"
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (!pm.collectionVariables.get(\"ASSET_ID\")) { throw new Error(\"Create temporary record first\"); }"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 404\", () => pm.response.to.have.status(404));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Loans",
+      "item": [
+        {
+          "name": "List",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{BASE_URL}}/api/loans"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Create temporary record",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{BASE_URL}}/api/loans",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"loan_title\": \"Final API demo\",\n  \"principal_amount\": 12000000,\n  \"interest_rate\": 12,\n  \"term_months\": 12,\n  \"start_date\": \"2026-01-01\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.collectionVariables.unset(\"LOAN_ID\");"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 201\", () => pm.response.to.have.status(201));",
+                  "pm.collectionVariables.set(\"LOAN_ID\",pm.response.json().id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get created record",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{BASE_URL}}/api/loans/{{LOAN_ID}}"
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (!pm.collectionVariables.get(\"LOAN_ID\")) { throw new Error(\"Create temporary record first\"); }"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Update created record",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{BASE_URL}}/api/loans/{{LOAN_ID}}",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"loan_title\": \"Final API demo updated\",\n  \"principal_amount\": 12000000,\n  \"interest_rate\": 12,\n  \"term_months\": 12,\n  \"start_date\": \"2026-01-01\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (!pm.collectionVariables.get(\"LOAN_ID\")) { throw new Error(\"Create temporary record first\"); }"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "EMI",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{BASE_URL}}/api/loans/calculate",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"principal_amount\": 1000,\n  \"interest_rate\": 12,\n  \"term_months\": 12\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"EMI correct\",()=>pm.expect(pm.response.json().monthly_payment).to.eql(88.85));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Zero interest",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{BASE_URL}}/api/loans/calculate",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"principal_amount\": 1200,\n  \"interest_rate\": 0,\n  \"term_months\": 12\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"Zero rate\",()=>pm.expect(pm.response.json().monthly_payment).to.eql(100));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Schedule",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{BASE_URL}}/api/loans/{{LOAN_ID}}/schedule"
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (!pm.collectionVariables.get(\"LOAN_ID\")) { throw new Error(\"Create temporary record first\"); }"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+                  "const rows=pm.response.json(); pm.test(\"Last balance zero\",()=>pm.expect(rows[rows.length-1].remaining_balance).to.eql(0));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Close loan",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{BASE_URL}}/api/loans/{{LOAN_ID}}/status",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"CLOSED\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (!pm.collectionVariables.get(\"LOAN_ID\")) { throw new Error(\"Create temporary record first\"); }"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Delete temporary record",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": "{{BASE_URL}}/api/loans/{{LOAN_ID}}"
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (!pm.collectionVariables.get(\"LOAN_ID\")) { throw new Error(\"Create temporary record first\"); }"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Deleted record not found",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{BASE_URL}}/api/loans/{{LOAN_ID}}"
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (!pm.collectionVariables.get(\"LOAN_ID\")) { throw new Error(\"Create temporary record first\"); }"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 404\", () => pm.response.to.have.status(404));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Investments",
+      "item": [
+        {
+          "name": "List",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{BASE_URL}}/api/investments"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Create temporary record",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{BASE_URL}}/api/investments",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"symbol\": \"DEMO\",\n  \"investment_type\": \"STOCK\",\n  \"quantity\": 10,\n  \"buy_price\": 100000,\n  \"current_price\": 120000\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.collectionVariables.unset(\"INVESTMENT_ID\");"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 201\", () => pm.response.to.have.status(201));",
+                  "pm.collectionVariables.set(\"INVESTMENT_ID\",pm.response.json().id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get created record",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{BASE_URL}}/api/investments/{{INVESTMENT_ID}}"
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (!pm.collectionVariables.get(\"INVESTMENT_ID\")) { throw new Error(\"Create temporary record first\"); }"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Update created record",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{BASE_URL}}/api/investments/{{INVESTMENT_ID}}",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"symbol\": \"DEMO\",\n  \"investment_type\": \"STOCK\",\n  \"quantity\": 10,\n  \"buy_price\": 100000,\n  \"current_price\": 80000\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (!pm.collectionVariables.get(\"INVESTMENT_ID\")) { throw new Error(\"Create temporary record first\"); }"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Summary",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{BASE_URL}}/api/investments/summary"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Verify loss",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{BASE_URL}}/api/investments/{{INVESTMENT_ID}}"
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (!pm.collectionVariables.get(\"INVESTMENT_ID\")) { throw new Error(\"Create temporary record first\"); }"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"ROI -20%\",()=>pm.expect(pm.response.json().roi).to.eql(-20));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Delete temporary record",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": "{{BASE_URL}}/api/investments/{{INVESTMENT_ID}}"
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (!pm.collectionVariables.get(\"INVESTMENT_ID\")) { throw new Error(\"Create temporary record first\"); }"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Deleted record not found",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{BASE_URL}}/api/investments/{{INVESTMENT_ID}}"
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (!pm.collectionVariables.get(\"INVESTMENT_ID\")) { throw new Error(\"Create temporary record first\"); }"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 404\", () => pm.response.to.have.status(404));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
