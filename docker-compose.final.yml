@@ -51,7 +51,7 @@ services:
   # 2. Laravel (PHP)
   transaction-service:
     build:
-      context: ./services/transaction-service
+      context: ./services/transaction-service/final
       dockerfile: Dockerfile
     container_name: cashflow-transaction-final
     restart: always
@@ -59,12 +59,18 @@ services:
       - "${TRANSACTION_SERVICE_PORT:-8082}:8082"
     environment:
       - APP_ENV=production
+      - APP_DEBUG=false
+      - DB_CONNECTION=mysql
       - DB_HOST=transaction-db
-      - DB_DATABASE=transaction_db
+      - DB_DATABASE=transaction_final_db
       - DB_USERNAME=root
       - DB_PASSWORD=root_password
+      - CACHE_STORE=array
+      - SESSION_DRIVER=array
+      - QUEUE_CONNECTION=sync
     depends_on:
-      - transaction-db
+      transaction-db:
+        condition: service_healthy
     networks:
       - final-network
 
@@ -159,10 +165,14 @@ services:
     restart: always
     environment:
       MYSQL_ROOT_PASSWORD: root_password
-      MYSQL_DATABASE: transaction_db
+      MYSQL_DATABASE: transaction_final_db
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -uroot -p$$MYSQL_ROOT_PASSWORD --silent"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
     volumes:
-      - ./services/transaction-service/db/init-transaction-db.sql:/docker-entrypoint-initdb.d/init.sql
-      - transaction_final_data:/var/lib/mysql
+      - transaction_laravel_data:/var/lib/mysql
     networks:
       - final-network
 
@@ -219,7 +229,7 @@ networks:
 
 volumes:
   auth_final_data:
-  transaction_final_data:
+  transaction_laravel_data:
   asset_final_data:
   integration_final_data:
   mongo_final_data:

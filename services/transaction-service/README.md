@@ -1,5 +1,7 @@
 # Transaction & Budget Service (PHP Native)
 
+> Bản cuối kỳ Laravel nằm trong [`final/`](final/README.md). Bản giữa kỳ tiếp tục dùng `src/` và Dockerfile ở thư mục này.
+
 - **Phụ trách:** Thành viên 2 (Transaction & Budget Service)
 - **Công nghệ:** PHP 8.2 (Bản giữa kỳ: PHP Native / Bản cuối kỳ: Laravel)
 - **Cơ sở dữ liệu:** MySQL (`transaction_db` trên port 3306)

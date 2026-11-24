@@ -71,3 +71,4 @@ logs/
 
 # Docker
 .dockerignore
+!services/transaction-service/final/.dockerignore
