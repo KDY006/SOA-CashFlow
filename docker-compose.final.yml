@@ -88,8 +88,12 @@ services:
       - DB_NAME=transaction_db
       - DB_USER=root
       - DB_PASSWORD=root_password
+      - CACHE_STORE=array
+      - SESSION_DRIVER=array
+      - QUEUE_CONNECTION=sync
     depends_on:
-      - transaction-db
+      transaction-db:
+        condition: service_healthy
     networks:
       - final-network
 
@@ -231,10 +235,14 @@ services:
     command: --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci
     environment:
       MYSQL_ROOT_PASSWORD: root_password
-      MYSQL_DATABASE: transaction_db
+      MYSQL_DATABASE: transaction_final_db
+    healthcheck:
+      test: [ "CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -uroot -p$$MYSQL_ROOT_PASSWORD --silent" ]
+      interval: 5s
+      timeout: 5s
+      retries: 30
     volumes:
-      - ./services/transaction-service/db/init-transaction-db.sql:/docker-entrypoint-initdb.d/init.sql
-      - transaction_final_data:/var/lib/mysql
+      - transaction_laravel_data:/var/lib/mysql
     networks:
       - final-network
 
@@ -301,7 +309,7 @@ networks:
 
 volumes:
   auth_final_data:
-  transaction_final_data:
+  transaction_laravel_data:
   asset_final_data:
   integration_final_data:
   analytics_final_data:
