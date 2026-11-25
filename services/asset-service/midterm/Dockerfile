@@ -1,10 +1,11 @@
-FROM mcr.microsoft.com/dotnet/sdk:8.0 AS build
+FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
 WORKDIR /app
-COPY midterm/ ./
+COPY AssetService.csproj ./
 RUN dotnet restore
-RUN dotnet publish -c Release -o /app/publish
+COPY . ./
+RUN dotnet publish -c Release -o /app/publish --no-restore
 
-FROM mcr.microsoft.com/dotnet/runtime:8.0 AS final
+FROM mcr.microsoft.com/dotnet/runtime:10.0 AS runtime
 WORKDIR /app
 COPY --from=build /app/publish .
 ENV PORT=8083

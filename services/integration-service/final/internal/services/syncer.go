@@ -225,12 +225,23 @@ func (s *Syncer) forward(ctx context.Context, t models.BankTransaction, userID i
 			Transaction struct {
 				ID json.Number `json:"id"`
 			} `json:"transaction"`
-			BudgetAlert map[string]any `json:"budget_alert"`
+			BudgetAlert  map[string]any   `json:"budget_alert"`
+			BudgetAlerts []map[string]any `json:"budget_alerts"`
 		} `json:"data"`
 	}
 	if err := json.Unmarshal(raw, &out); err != nil {
 		return 0, nil, fmt.Errorf("không đọc được phản hồi transaction-service: %v", err)
 	}
 	ref, _ := out.Data.Transaction.ID.Int64()
-	return ref, out.Data.BudgetAlert, nil
+	alert := out.Data.BudgetAlert
+	if alert == nil {
+		for _, item := range out.Data.BudgetAlerts {
+			status, _ := item["status"].(string)
+			if status == "EXCEEDED" || status == "WARNING" {
+				alert = item
+				break
+			}
+		}
+	}
+	return ref, alert, nil
 }

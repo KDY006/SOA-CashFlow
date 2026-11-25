@@ -169,15 +169,15 @@ def _normalise(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
 
 
 # Giao tiep qua HTTP voi Transaction Service, khong doc truc tiep database cua service do.
-# Phan trang 500 dong/lan de lay du giao dich ke ca khi du lieu lon.
+# Phan trang 100 dong/lan de tuong thich voi gioi han validation cua ca Midterm va Laravel Final.
 def _fetch_transactions(user_id: int, start: date | None, end: date | None) -> list[dict[str, Any]]:
-    limit, offset, rows = 500, 0, []
+    limit, offset, rows = 100, 0, []
     while True:
         params: dict[str, Any] = {"user_id": user_id, "limit": limit, "offset": offset}
         if start:
-            params["from_date"] = start.isoformat() + " 00:00:00"
+            params["from_date"] = start.isoformat()
         if end:
-            params["to_date"] = end.isoformat() + " 23:59:59"
+            params["to_date"] = end.isoformat()
         try:
             response = requests.get(f"{TRANSACTION_SERVICE_URL}/api/transactions", params=params,
                                     headers={"Accept": "application/json", "X-User-Id": str(user_id)}, timeout=10)

@@ -1,19 +1,13 @@
 {
-  "name": "cashflow-notification-service",
-  "version": "1.0.0",
-  "description": "Notification microservice for SOA CashFlow (Node.js / Express / Socket.io / Redis)",
+  "name": "cashflow-notification-service-midterm",
+  "version": "1.0.0-midterm",
+  "description": "Native Node.js Notification Microservice for SOA CashFlow (Zero-dependency HTTP + SSE + Raw TCP Redis)",
   "main": "src/index.js",
   "scripts": {
     "start": "node src/index.js",
-    "dev": "nodemon src/index.js"
+    "dev": "node --watch src/index.js"
   },
-  "dependencies": {
-    "express": "^4.19.2",
-    "ioredis": "^5.3.2",
-    "socket.io": "^4.7.5",
-    "dotenv": "^16.4.5"
-  },
-  "devDependencies": {
-    "nodemon": "^3.1.0"
+  "engines": {
+    "node": ">=18.0.0"
   }
 }

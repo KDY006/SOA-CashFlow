@@ -7,4 +7,4 @@ COPY . .
 RUN composer install --no-dev --prefer-dist --no-interaction --optimize-autoloader \
     && chmod -R 775 storage bootstrap/cache
 EXPOSE 8082
-CMD ["sh", "-c", "php artisan migrate --force && php artisan serve --host=0.0.0.0 --port=8082"]
+CMD ["sh", "-c", "php artisan migrate --force && php artisan db:seed --force && php artisan serve --host=0.0.0.0 --port=8082"]

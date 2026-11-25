@@ -26,82 +26,76 @@ public static class Router
         {
             var path = context.Request.Url?.AbsolutePath.TrimEnd('/').ToLowerInvariant() ?? "";
             var method = context.Request.HttpMethod;
-            object? result;
-            int status = 200;
-
             var req = context.Request;
             var userId = HttpHelper.ResolveUserId(req);
 
-<<<<<<< HEAD
-            // --- HEALTH & ANALYTICS & THUẬT TOÁN ---
+            object? result;
+            int status = 200;
+
             if (path == "" || path == "/health")
                 result = new { service = "asset-service", status = "UP", version = "1.0.0-midterm" };
-            else if (path == "/api/assets/net-worth" && method == "GET") 
-=======
-            // --- ANALYTICS & THUẬT TOÁN ---
-            if (path == "/api/assets/net-worth" && method == "GET") 
->>>>>>> origin/Dat
+            else if (path == "/api/assets/net-worth" && method == "GET")
                 result = AnalyticsHandler.GetNetWorth(userId);
-            else if (path == "/api/assets/depreciation" && method == "POST") 
+            else if (path == "/api/assets/depreciation" && method == "POST")
                 result = AssetHandler.CalculateDepreciation(await HttpHelper.ReadBodyAsync<DepreciationInput>(context));
-            else if (path == "/api/loans/calculate" && method == "POST") 
+            else if (path == "/api/loans/calculate" && method == "POST")
                 result = LoanHandler.CalculateLoan(await HttpHelper.ReadBodyAsync<LoanCalculationInput>(context));
-            
-            // --- ASSETS (TÀI SẢN) ---
-            else if (path == "/api/assets" && method == "GET") 
+            else if (path == "/api/assets" && method == "GET")
                 result = AssetHandler.GetAssets(userId);
-            else if (path == "/api/assets" && method == "POST") 
-                { var x = await HttpHelper.ReadBodyAsync<AssetInput>(context); result = AssetHandler.CreateAsset(x with { UserId = HttpHelper.BodyUserId(req, x.UserId, userId) }); status = 201; }
-            else if (HttpHelper.TryParseId(path, "/api/assets/", out var assetId) && method == "GET") 
+            else if (path == "/api/assets" && method == "POST")
+            {
+                var x = await HttpHelper.ReadBodyAsync<AssetInput>(context);
+                result = AssetHandler.CreateAsset(x with { UserId = HttpHelper.BodyUserId(req, x.UserId, userId) });
+                status = 201;
+            }
+            else if (HttpHelper.TryParseId(path, "/api/assets/", out var assetId) && method == "GET")
                 result = Database.GetById("assets", assetId, userId);
-            else if (HttpHelper.TryParseId(path, "/api/assets/", out assetId) && method == "PUT") 
-<<<<<<< HEAD
-                { var x = await HttpHelper.ReadBodyAsync<AssetInput>(context); result = AssetHandler.UpdateAsset(assetId, userId, x with { UserId = HttpHelper.BodyUserId(req, x.UserId, userId) }); }
-=======
-                result = AssetHandler.UpdateAsset(assetId, userId, await HttpHelper.ReadBodyAsync<AssetInput>(context));
->>>>>>> origin/Dat
-            else if (HttpHelper.TryParseId(path, "/api/assets/", out assetId) && method == "DELETE") 
+            else if (HttpHelper.TryParseId(path, "/api/assets/", out assetId) && method == "PUT")
+            {
+                var x = await HttpHelper.ReadBodyAsync<AssetInput>(context);
+                result = AssetHandler.UpdateAsset(assetId, userId, x with { UserId = HttpHelper.BodyUserId(req, x.UserId, userId) });
+            }
+            else if (HttpHelper.TryParseId(path, "/api/assets/", out assetId) && method == "DELETE")
                 result = AssetHandler.DeleteAsset(assetId, userId);
-
-            // --- LOANS (KHOẢN VAY) ---
-            else if (path == "/api/loans" && method == "GET") 
+            else if (path == "/api/loans" && method == "GET")
                 result = LoanHandler.GetLoans(userId);
-            else if (path == "/api/loans" && method == "POST") 
-                { var x = await HttpHelper.ReadBodyAsync<LoanInput>(context); result = LoanHandler.CreateLoan(x with { UserId = HttpHelper.BodyUserId(req, x.UserId, userId) }); status = 201; }
-            else if (HttpHelper.TryParseId(path, "/api/loans/", out var loanId) && method == "GET") 
+            else if (path == "/api/loans" && method == "POST")
+            {
+                var x = await HttpHelper.ReadBodyAsync<LoanInput>(context);
+                result = LoanHandler.CreateLoan(x with { UserId = HttpHelper.BodyUserId(req, x.UserId, userId) });
+                status = 201;
+            }
+            else if (HttpHelper.TryParseId(path, "/api/loans/", out var loanId) && method == "GET")
                 result = Database.GetById("loans", loanId, userId);
-            else if (HttpHelper.TryParseId(path, "/api/loans/", out loanId) && method == "PUT") 
-<<<<<<< HEAD
-                { var x = await HttpHelper.ReadBodyAsync<LoanInput>(context); result = LoanHandler.UpdateLoan(loanId, userId, x with { UserId = HttpHelper.BodyUserId(req, x.UserId, userId) }); }
-=======
-                result = LoanHandler.UpdateLoan(loanId, userId, await HttpHelper.ReadBodyAsync<LoanInput>(context));
->>>>>>> origin/Dat
-            else if (HttpHelper.TryParseId(path, "/api/loans/", out loanId) && method == "DELETE") 
+            else if (HttpHelper.TryParseId(path, "/api/loans/", out loanId) && method == "PUT")
+            {
+                var x = await HttpHelper.ReadBodyAsync<LoanInput>(context);
+                result = LoanHandler.UpdateLoan(loanId, userId, x with { UserId = HttpHelper.BodyUserId(req, x.UserId, userId) });
+            }
+            else if (HttpHelper.TryParseId(path, "/api/loans/", out loanId) && method == "DELETE")
                 result = LoanHandler.DeleteLoan(loanId, userId);
-
-            // --- INVESTMENTS (ĐẦU TƯ) ---
-            else if (path == "/api/investments" && method == "GET") 
+            else if (path == "/api/investments" && method == "GET")
                 result = InvestmentHandler.GetInvestments(userId);
-            else if (path == "/api/investments" && method == "POST") 
-<<<<<<< HEAD
-                { var x = await HttpHelper.ReadBodyAsync<InvestmentInput>(context); result = InvestmentHandler.CreateInvestment(x with { UserId = HttpHelper.BodyUserId(req, x.UserId, userId) }); status = 201; }
-            else if (HttpHelper.TryParseId(path, "/api/investments/", out var invId) && method == "GET") 
+            else if (path == "/api/investments" && method == "POST")
+            {
+                var x = await HttpHelper.ReadBodyAsync<InvestmentInput>(context);
+                result = InvestmentHandler.CreateInvestment(x with { UserId = HttpHelper.BodyUserId(req, x.UserId, userId) });
+                status = 201;
+            }
+            else if (HttpHelper.TryParseId(path, "/api/investments/", out var invId) && method == "GET")
                 result = Database.GetById("investments", invId, userId);
-            else if (HttpHelper.TryParseId(path, "/api/investments/", out invId) && method == "PUT") 
-                { var x = await HttpHelper.ReadBodyAsync<InvestmentInput>(context); result = InvestmentHandler.UpdateInvestment(invId, userId, x with { UserId = HttpHelper.BodyUserId(req, x.UserId, userId) }); }
-=======
-                { result = InvestmentHandler.CreateInvestment(await HttpHelper.ReadBodyAsync<InvestmentInput>(context)); status = 201; }
-            else if (HttpHelper.TryParseId(path, "/api/investments/", out var invId) && method == "GET") 
-                result = Database.GetById("investments", invId, userId);
-            else if (HttpHelper.TryParseId(path, "/api/investments/", out invId) && method == "PUT") 
-                result = InvestmentHandler.UpdateInvestment(invId, userId, await HttpHelper.ReadBodyAsync<InvestmentInput>(context));
->>>>>>> origin/Dat
-            else if (HttpHelper.TryParseId(path, "/api/investments/", out invId) && method == "DELETE") 
+            else if (HttpHelper.TryParseId(path, "/api/investments/", out invId) && method == "PUT")
+            {
+                var x = await HttpHelper.ReadBodyAsync<InvestmentInput>(context);
+                result = InvestmentHandler.UpdateInvestment(invId, userId, x with { UserId = HttpHelper.BodyUserId(req, x.UserId, userId) });
+            }
+            else if (HttpHelper.TryParseId(path, "/api/investments/", out invId) && method == "DELETE")
                 result = InvestmentHandler.DeleteInvestment(invId, userId);
-
-            // --- 404 NOT FOUND ---
-            else 
-                { status = 404; result = new { error = "Endpoint not found" }; }
+            else
+            {
+                status = 404;
+                result = new { error = "Endpoint not found" };
+            }
 
             await HttpHelper.WriteJsonAsync(response, status, result);
         }

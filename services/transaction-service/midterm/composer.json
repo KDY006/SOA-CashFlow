@@ -1,6 +1,6 @@
 {
-  "name": "cashflow/transaction-service",
-  "description": "Transaction microservice for SOA CashFlow (PHP / Laravel)",
+  "name": "cashflow/transaction-service-midterm",
+  "description": "Transaction & Budget microservice for SOA CashFlow (Native PHP 8.2 PDO)",
   "type": "project",
   "require": {
     "php": "^8.2"

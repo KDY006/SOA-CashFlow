@@ -2,7 +2,6 @@
 # SOA-CashFlow: Docker Compose - Báo cáo Giữa kỳ (Triển khai Services Native)
 # Kiến trúc 6 Microservices + API Gateway + 5 MySQL + 1 Redis
 # =============================================================================
-version: '3.8'
 
 services:
   # ---------------------------------------------------------------------------

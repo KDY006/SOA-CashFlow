@@ -1,8 +1,3 @@
-/**
- * SOA CashFlow - Notification Service (Native Node.js / Zero-dependency)
- * Phụ trách: Nhóm trưởng - Phiên bản Giữa kỳ (Midterm)
- */
-
 const http = require('node:http');
 const { parse } = require('node:url');
 const config = require('./config');
@@ -36,7 +31,7 @@ function parseJsonBody(req) {
       if (!body.trim()) return resolve({});
       try {
         resolve(JSON.parse(body));
-      } catch (err) {
+      } catch {
         reject(new Error('Định dạng JSON gửi lên không hợp lệ'));
       }
     });
@@ -44,33 +39,24 @@ function parseJsonBody(req) {
   });
 }
 
-// Lấy user id do Gateway inject (X-User-Id), null nếu gọi trực tiếp
 function headerUserIdFrom(req) {
   const headerUserId = req.headers['x-user-id'];
-  if (headerUserId && Number(headerUserId) > 0) return Number(headerUserId);
-  return null;
+  return headerUserId && Number(headerUserId) > 0 ? Number(headerUserId) : null;
 }
 
-// Kiểm tra quyền ADMIN từ header X-User-Role (không phân biệt hoa thường)
 function isAdmin(req) {
   return String(req.headers['x-user-role'] || '').trim().toUpperCase() === 'ADMIN';
 }
 
-// Xác định user hiệu lực:
-// - Có X-User-Id: dùng header; chỉ ADMIN mới được chỉ định user khác (path/body/query user_id)
-// - Không có header (gọi nội bộ service-to-service): dùng path/body/query user_id, rồi mặc định
 function resolveUserId(req, query, paramId, bodyUserId) {
   const requested = [paramId, bodyUserId, query.user_id].find((v) => v && Number(v) > 0);
   const headerUserId = headerUserIdFrom(req);
   if (headerUserId) {
-    if (isAdmin(req) && requested) return Number(requested);
-    return headerUserId;
+    return isAdmin(req) && requested ? Number(requested) : headerUserId;
   }
-  if (requested) return Number(requested);
-  return 1; // Mặc định user 1 cho demo
+  return requested ? Number(requested) : 1;
 }
 
-// Khởi chạy lắng nghe Redis Pub/Sub
 redisClient.initRedis();
 redisClient.onNotification((rawMessage) => {
   try {
@@ -82,21 +68,18 @@ redisClient.onNotification((rawMessage) => {
       type: data.type || 'SYSTEM',
       metadata: data.metadata || {},
     });
-    const deliveredCount = sse.broadcastToUser(notif.userId, notif);
-    console.log(`[Redis Event] Đã tiếp nhận thông báo cho User ${notif.userId} -> Đẩy realtime tới ${deliveredCount} client(s)`);
+    sse.broadcastToUser(notif.userId, notif);
   } catch (err) {
-    console.error(`[Redis Event Error] Không thể xử lý message: ${err.message}`);
+    console.error(`[Redis Event Error] ${err.message}`);
   }
 });
 
-// Khởi tạo HTTP Server thuần
 const server = http.createServer(async (req, res) => {
-  // 1. CORS Preflight
   if (req.method === 'OPTIONS') {
     res.writeHead(204, {
       'Access-Control-Allow-Origin': '*',
       'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-      'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-User-Id',
+      'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-User-Id, X-User-Role',
     });
     return res.end();
   }
@@ -107,7 +90,6 @@ const server = http.createServer(async (req, res) => {
   const query = parsedUrl.query;
 
   try {
-    // 2. Health Check
     if (pathname === '/health' || pathname === '/') {
       return sendJson(res, 200, {
         service: 'notification-service',
@@ -117,23 +99,13 @@ const server = http.createServer(async (req, res) => {
         time: new Date().toISOString(),
         redis: redisClient.getStatus(),
         activeSseClients: sse.getClientCount(),
-        endpoints: [
-          'GET  /api/notifications/stream?user_id=1 (Realtime SSE Stream)',
-          'GET  /api/notifications/user/:userId (Lịch sử thông báo)',
-          'POST /api/notifications/send (Gửi thông báo mới)',
-          'PUT  /api/notifications/:id/read (Đánh dấu đã đọc)',
-        ],
       });
     }
 
-    // 3. Kênh Realtime Server-Sent Events (SSE)
     if (pathname === '/api/notifications/stream' && method === 'GET') {
-      const userId = resolveUserId(req, query);
-      return sse.registerClient(userId, req, res);
+      return sse.registerClient(resolveUserId(req, query), req, res);
     }
 
-    // 4. Lấy danh sách thông báo của người dùng
-    // Khớp GET /api/notifications hoặc GET /api/notifications/user/:userId
     const userNotifMatch = pathname.match(/^\/api\/notifications\/user\/(\d+)$/);
     if ((pathname === '/api/notifications' || userNotifMatch) && method === 'GET') {
       const targetUserId = resolveUserId(req, query, userNotifMatch ? userNotifMatch[1] : null);
@@ -141,15 +113,13 @@ const server = http.createServer(async (req, res) => {
       const offset = parseInt(query.offset || '0', 10);
       const unreadOnly = query.unread_only === 'true';
 
-      const data = store.getByUser(targetUserId, { limit, offset, unreadOnly });
       return sendJson(res, 200, {
         success: true,
         userId: targetUserId,
-        ...data,
+        ...store.getByUser(targetUserId, { limit, offset, unreadOnly }),
       });
     }
 
-    // 5. Gửi thông báo mới (POST /api/notifications/send hoặc POST /api/notifications)
     if ((pathname === '/api/notifications/send' || pathname === '/api/notifications') && method === 'POST') {
       const body = await parseJsonBody(req);
       const userId = resolveUserId(req, query, null, body.userId || body.user_id);
@@ -163,13 +133,8 @@ const server = http.createServer(async (req, res) => {
         });
       }
 
-      // Lưu trữ vào Store
       const notification = store.addNotification({ userId, title, message, type, metadata });
-
-      // Phát realtime qua SSE
       const deliveredCount = sse.broadcastToUser(userId, notification);
-
-      // Phát qua Redis Pub/Sub cho các instance khác
       redisClient.publishNotification(notification);
 
       return sendJson(res, 201, {
@@ -181,12 +146,10 @@ const server = http.createServer(async (req, res) => {
       });
     }
 
-    // 6. Đánh dấu đã đọc một thông báo (PUT /api/notifications/:id/read)
     const readMatch = pathname.match(/^\/api\/notifications\/(\d+)\/read$/);
     if (readMatch && method === 'PUT') {
       const notifId = readMatch[1];
       const userId = resolveUserId(req, query);
-      // ADMIN (không chỉ định user_id) được đánh dấu bất kỳ thông báo nào
       const ownerFilter = isAdmin(req) && headerUserIdFrom(req) && !query.user_id ? null : userId;
       const updated = store.markAsRead(notifId, ownerFilter);
 
@@ -204,10 +167,8 @@ const server = http.createServer(async (req, res) => {
       });
     }
 
-    // 7. Đánh dấu đã đọc tất cả (PUT /api/notifications/read-all)
     if (pathname === '/api/notifications/read-all' && method === 'PUT') {
-      const userId = resolveUserId(req, query);
-      const count = store.markAllAsRead(userId);
+      const count = store.markAllAsRead(resolveUserId(req, query));
       return sendJson(res, 200, {
         success: true,
         message: `Đã đánh dấu ${count} thông báo là đã đọc`,
@@ -215,7 +176,6 @@ const server = http.createServer(async (req, res) => {
       });
     }
 
-    // Route không khớp
     return sendJson(res, 404, {
       success: false,
       error: 'NOT_FOUND',
@@ -232,14 +192,9 @@ const server = http.createServer(async (req, res) => {
 });
 
 server.listen(config.port, config.host, () => {
-  console.log('='.repeat(65));
-  console.log(`🔔 [Notification Service Native Node.js] Đang lắng nghe: http://${config.host}:${config.port}`);
-  console.log(`📡 Kênh Realtime SSE: http://${config.host}:${config.port}/api/notifications/stream`);
-  console.log(`🔄 Redis Pub/Sub: ${config.redis.host}:${config.redis.port} (Channel: ${config.redis.channel})`);
-  console.log('='.repeat(65));
+  console.log(`[Notification Service Native Node.js] Listening on http://${config.host}:${config.port}`);
 });
 
 process.on('SIGTERM', () => {
-  console.log('Đang dừng Notification Service...');
   server.close(() => process.exit(0));
 });
